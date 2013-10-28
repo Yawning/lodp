@@ -1,0 +1,120 @@
+Lightweight Obfuscated Datagram Protocol (LODP)
+Yawning Angel <yawning at schwanenlied dot me>
+
+    "This network protocol kills facists"
+
+This is the reference implementation of LODP, a fingerprinting/active scanning
+resistant unreliable datagram protocol, similar to Dust and SSU.
+
+It currently has the following external dependencies:
+ * CMake (Compile time only)
+ * BSD tree.h/queue.h (Use libnostd if you need a copy, compile time only)
+ * libottery (https://github.com/nmathewson/libottery)
+
+It currently incorporates code from the following 3rd parties, all "Public
+Domain" of various flavors:
+ * Floodyberry's curve25519-donna.c 
+   (https://github.com/floodyberry/curve25519-donna)
+ * Floodyberry's SipHash-2-4 implementation
+   (https://github.com/floodyberry/siphash)
+ * Floodyberry's (X)ChaCha implementation
+   (https://github.com/floodyberry/chacha-opt)
+ * blake2 reference implementation
+
+Please see the COPYING file for information on licensing.
+
+For more information on the LODP protocol see:
+ * docs/lodp-protocol-spec.txt
+
+Building:
+ * Edit ./CMakeFiles.txt
+ * mkdir build; cd build; cmake ..; make
+ * If more detailed instructions are required, the codebase in it's current
+   state probably is not for you.
+
+Implementation notes:
+ * If you are using a compiler that does not support C99, may the various cosmic
+   eldrich abominations have mercy on your soul, because LODP will not.
+ * If you are using a compiler that does not understand GCC attributes, you will
+   need to edit the code.  Fortunately, the 3 compilers that matter (GCC,
+   clang, and ICC) all support this.
+ * As usual I didn't test on Windows because doing development on that platform
+   makes me want to gouge my eyes out.  Patches welcome.
+ * This is neither thread nor fork safe.  Making it thread safe isn't
+   particularly hard, but I didn't want to mess with doing locking in a portable
+   manner.
+ * The session table currently is a single AVL tree keyed off the remote source
+   IP/port.  This could be changed to something better (Splitting the trees
+   based on address family may be a good idea).
+ * The code does a fair amount of runtime sanity checking via assert.  If you
+   are feeling brave you can -DNDEBUG to make it go faster, though a network
+   library that's 2 copy on the send path and 3 copy on the receive path, with a
+   bunch of cryptography in the critical path is not going to bottle neck on
+   assertions.
+ * The Maximum Segment Size is a compile time constant since the buffers used on
+   packet send/receive are preallocated in a pool.  The size is selected on the
+   somewhat conservative side for now, though is likely to increase before I
+   declare the code fit for general use.
+ * The maximum number of supported sessions per source IP/port to a given
+   endpoint is 1.  This is not a LODP limitation but an implementation one.
+   Attempting to handshake while you already have a session established to a
+   given destination will result in the handshake failing, so don't.
+ * Things that haven't been implemented yet:
+   * Support for HEARTBEAT/HEARTBEAT ACK packets.
+   * Support for REKEY/REKEY ACK packets.
+   * HANDSHAKE cookie reuse detection.
+   * Randomization of packet length on the wire (Will do, just need to wire up
+     a callback so the user can control this).
+
+TODO:
+ * Documentation changes that should be in the protocol spec.
+   * Connection initator side packet processing uses an ephemeral key, so it
+     needs to process INIT ACK and HANDSHAKE ACKs using keys from the session
+     TCB.
+   * DATA Length field includes the TLV style header.
+   * HEARTBEAT/HEARTBEAT ACK Length field includes the TLV style header.
+   * INIT ACK no longer contains the address.
+ * Add a better API for server side keypair creation.
+ * Expose the MSS to the application code.
+ * Implement the rest of the packet types.
+ * HANDSHAKE cookie reuse detection.
+ * Rate limit INIT ACK/HANDSHAKE ACKs?
+ * Add logging support.
+ * Data transfer statistics.
+ * Packet length obfuscation.
+ * Include the optimized curve25519-donna implementations.
+ * Include the optimized blake2 implementations. (XXX: Is it worth saying
+   "screw 32 bit system performance" and using truncated blake2b?)
+ * Reconsider how lodp_buf* works.  With the current callback based design the
+   bufferpool should only have ~2 allocations pending at most, unless the server
+   code does something crazy with reentrant callbacks (lodp_test.c actually does
+   this).
+ * Clean up/refactor the code to be easier to audit and more obviously correct.
+
+Eventually someone should do:
+ * Write unit tests.
+ * Make the library support Windows out of the box (Should mostly work).
+
+Might do:
+ * The build system kind of sucks since you need to edit CMakeLists.txt.
+ * Support more than 1 connection from a given source IP/port.  However
+   an arbitrary number would be bad because each added connection is another MAC
+   validation per inbound packet.
+ * Add replay protection to data packets
+   * The "easy" way to do it is to detect initialization vector reuse, via a
+     bloom filter or something.
+   * Technically speaking it's not LODP's problem.
+   * IV reuse is extremely bad, but extremely unlikely assuming the CSPRNG is
+     good (Consider using a PRP for IV generation.  Unfortunately the only
+     suitable PRP I can think of is Rijendael with a 192 bit key/block size
+     which is slow and hard to implement well).
+ * Think about allowing this to be thread safe.  That said, with the optimized
+   crypto on good hardware a single core should be more than enough for a while.
+ * At the expense of complicating the code, I could remove the memcpy from
+   lodp_endpoint_on_packet().
+ * Revisit the memory/performance tradeoff currently being made by having a
+   gigantic TCB.
+ * Modify the third party stuff in src/ext so they don't pollute the namespace.
+
+Things that the protocol should have:
+ * It probably is a good idea to rotate the intro keys.
