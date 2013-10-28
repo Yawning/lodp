@@ -17,8 +17,6 @@ Yawning Angel <yawning at schwanenlied dot me>
    Examples of candidates for LODP encapsulation, in no particular order, are
    SCTP-over-UDP, Reliable Data Protocol (RFC1151), enet, and UDT.
 
-   (XXX: Add something covering I2P's SSU and Dust)
-
 2. LODP Threat Model
 
    The threat model for LODP is identical to the threat model of obfs3
@@ -367,7 +365,7 @@ Yawning Angel <yawning at schwanenlied dot me>
    INIT packets received that are MACed or Encrypted with other keys MUST be
    discarded.
 
-   Implementations MAY chose to use ephemeral MAC/XChaCha keys for the keys
+   Implementations SHOULD use ephemeral MAC/XChaCha keys for the keys
    transmitted in a INIT ACK packet.
 
 7.3. Initiation Acknowledgement (INIT ACK)
@@ -379,10 +377,6 @@ Yawning Angel <yawning at schwanenlied dot me>
     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
     |    Type = 2   |    Reserved   |             Length            |
     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    |         Initiator Port        |    Initiator Address Length   |
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    |               Initiator Address (32 or 128 bits)              |
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
     \                                                               \
     /                             Cookie                            /
     \                                                               \
@@ -392,25 +386,11 @@ Yawning Angel <yawning at schwanenlied dot me>
 
       Should be set to all '0's and ignored by the receiver.
 
-   Initiator Port: 16 bits (unsigned integer)
-
-      The IP Port that the INIT packet was received from.
-
-   Initiator Address Length: 16 bits (unsigned integer)
-
-      The length of the IP address that the INIT packet was received from.
-      "4" for IPv4 addresses, "16" for IPv6 addresses.
-
-   Initiator Address: 32/128 bits (unsigned integer)
-
-      The IP address that the INIT packet was received from.
-
    Cookie: variable length
 
       An opaque cookie.  The format is up to the implementation however
       implementations SHOULD generate cookies that can be validated without
-      maintaining per-connection state, and SHOULD contain timestamping
-      information to prevent cookies from being reused.
+      maintaining per-connection state.
 
    The IntroKeys received in the INIT packet that triggered the INIT ACK MUST
    be used for the MAC and encryption of INIT ACK packets.
@@ -705,7 +685,11 @@ Yawning Angel <yawning at schwanenlied dot me>
          b) The packet is decrypted with the cipher SessionKey in the existing
             TCB.
 
-         c) If the packet type is DATA, HEARTBEAT, HEARTBEAT ACK, REKEY or
+         c) If the packet type is INIT ACK or HANDSHAKE ack, and the session is
+            in the middle of handshaking, the packet is processed.  Otherwise
+            the packet MUST be silently discarded.
+
+         d) If the packet type is DATA, HEARTBEAT, HEARTBEAT ACK, REKEY or
             REKEY ACK, the packet is processed.  Otherwise the packet MUST be
             silently discarded.
 
@@ -861,8 +845,8 @@ Yawning Angel <yawning at schwanenlied dot me>
 
    The protocol is vulnerable to replay attacks unless proper defenses are
    present.  Implementations MUST construct HANDSHAKE ACK cookies in a way that
-   disallows replay.  Implementations SHOULD incorporate additional defenses
-   such as rejecting duplicate IVs.
+   disallows replay.  Implementations MAY incorporate additional defenses such
+   as rejecting duplicate IVs.
 
    Data packets have no replay protection under the assumption that the
    encapsulated higher level protocol handles this on it's own.  As most
@@ -969,11 +953,13 @@ XXX: Stuff that's probably ok, but want a second opinion on
       just with Poly1305-AES instead of BLAKE2s)
 
    * There's nothing stopping people from replaying INIT packets.  I don't think
-     this is a problem, since the good (read "my") implementation will implement
-     duplicate IV detection, the INIT or INIT ACK will be discared if unexpected,
-     and the server won't allocate resources.
+     this is a problem, since all it does is result in an INIT ACK that looks
+     like random noise, and the responder won't allocate state.
 
 XXX: Revision history
+   2013-10-28:
+
+     * Synced protocol spec with codebase.
 
    2013-09-12: Second draft posted to tor-dev
 

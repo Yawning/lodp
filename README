@@ -67,13 +67,6 @@ Implementation notes:
      a callback so the user can control this).
 
 TODO:
- * Documentation changes that should be in the protocol spec.
-   * Connection initator side packet processing uses an ephemeral key, so it
-     needs to process INIT ACK and HANDSHAKE ACKs using keys from the session
-     TCB.
-   * DATA Length field includes the TLV style header.
-   * HEARTBEAT/HEARTBEAT ACK Length field includes the TLV style header.
-   * INIT ACK no longer contains the address.
  * Add a better API for server side keypair creation.
  * Expose the MSS to the application code.
  * Implement the rest of the packet types.
