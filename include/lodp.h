@@ -51,6 +51,8 @@
  * to expose that to the user.
  */
 
+
+#define LODP_PRIVATE_KEY_LEN	32
 #define LODP_PUBLIC_KEY_LEN	32
 
 
@@ -155,12 +157,13 @@ typedef struct {
 int lodp_init(void);
 void lodp_term(void);
 
+int lodp_generate_keypair(uint8_t *pub_key, size_t *pub_key_len, uint8_t *
+    priv_key, size_t *priv_key_len);
+
 lodp_endpoint *lodp_endpoint_bind(void *ctxt, const lodp_callbacks
     *callbacks, const uint8_t *priv_key, size_t priv_key_len);
 void lodp_endpoint_set_context(lodp_endpoint *ep, void *ctxt);
 void *lodp_endpoint_get_context(const lodp_endpoint *ep);
-int lodp_endpoint_get_public_key(const lodp_endpoint *ep, uint8_t *buf, size_t
-    *len);
 void lodp_endpoint_unbind(lodp_endpoint *ep);
 int lodp_endpoint_on_packet(lodp_endpoint *ep, const uint8_t *buf, size_t len,
     const struct sockaddr *addr, socklen_t addr_len);

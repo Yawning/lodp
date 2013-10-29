@@ -110,7 +110,7 @@ lodp_gen_keypair(lodp_ecdh_keypair *keypair, const uint8_t *buf, size_t len)
 			ret = curve25519_generate_pubkey(keypair);
 			if (ret)
 				goto out;
-			if (!lodp_ecdh_validate_pubkey(&keypair->public_key))
+			if (!(ret = lodp_ecdh_validate_pubkey(&keypair->public_key)))
 				break;
 		}
 	} else {

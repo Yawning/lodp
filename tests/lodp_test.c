@@ -74,7 +74,7 @@ static lodp_callbacks s_test_cbs =
 static lodp_endpoint *server_ep;
 static lodp_session *server_session;
 static struct sockaddr_in server_addr;
-static uint8_t server_priv_key[LODP_PUBLIC_KEY_LEN];
+static uint8_t server_priv_key[LODP_PRIVATE_KEY_LEN];
 static uint8_t server_pub_key[LODP_PUBLIC_KEY_LEN];
 static int server_connected;
 
@@ -109,6 +109,7 @@ main(int argc, char *argv[])
 {
 	uint8_t *test_payload;
 	int ret, i;
+	size_t pub_len, priv_len;
 	size_t len;
 
 
@@ -130,8 +131,16 @@ main(int argc, char *argv[])
 		goto out;
 	}
 
-	/* Generate a random private key for the server*/
-	ottery_rand_bytes(server_priv_key, sizeof(server_priv_key));
+	/* Generate a keypair */
+	pub_len = LODP_PUBLIC_KEY_LEN;
+	priv_len = LODP_PRIVATE_KEY_LEN;
+	ret = lodp_generate_keypair(server_pub_key, &pub_len, server_priv_key,
+	    &priv_len);
+	if (ret) {
+		fprintf(stderr, "ERROR: Failed to generate ecdh keypair (%d)\n",
+		    ret);
+		goto out;
+	}
 
 	/* Set up the server endpoint */
 	server_ep = lodp_endpoint_bind(NULL, &s_test_cbs, server_priv_key,
@@ -147,26 +156,6 @@ main(int argc, char *argv[])
 		fprintf(stderr, "ERROR: Failed to initialize client endpoint\n");
 		goto out_serv;
 	}
-
-	/*
-	 * Retreive the server's public key so the client can attempt to connect
-	 * to it.
-	 */
-	len = sizeof(server_pub_key);
-	ret = lodp_endpoint_get_public_key(server_ep, server_pub_key, &len);
-	if (ret) {
-		fprintf(stderr, "ERROR: Failed to obtain server public key\n");
-		goto out_client;
-	}
-
-#ifdef YAWNING
-	if (memcmp(server_pub_key,
-	    server_ep->intro_ecdh_keypair.public_key.public_key,
-	    sizeof(server_pub_key))) {
-		fprintf(stderr, "ERROR: Public key mismatch???\n");
-		goto out_serv;
-	}
-#endif
 
 	/*
 	 * Connect (Client->Server)

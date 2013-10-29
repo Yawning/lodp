@@ -41,6 +41,10 @@
 #error Expecting the user exposed public key length to match internal one.
 #endif
 
+#if (LODP_PRIVATE_KEY_LEN != LODP_ECDH_PRIVATE_KEY_LEN)
+#error Expecting the user exposed public key length to match internal one.
+#endif
+
 
 static inline int session_cmp(struct lodp_session_s *e1, struct lodp_session_s
     *e2);
@@ -158,21 +162,33 @@ lodp_endpoint_get_context(const lodp_endpoint *ep)
 
 
 int
-lodp_endpoint_get_public_key(const lodp_endpoint *ep, uint8_t *buf, size_t *len)
+lodp_generate_keypair(uint8_t *pub_key, size_t *pub_key_len, uint8_t *priv_key,
+    size_t *priv_key_len)
 {
-	if ((NULL == ep) | (NULL == buf) || (NULL == len))
+	lodp_ecdh_keypair keypair;
+	int ret;
+
+	if ((NULL == pub_key_len) || (NULL == priv_key_len))
 		return (LODP_ERR_INVAL);
 
-	if (*len < LODP_PUBLIC_KEY_LEN) {
-		*len = LODP_PUBLIC_KEY_LEN;
-		return (LODP_ERR_NOBUFS);
-	}
+	if ((*pub_key_len >= LODP_PUBLIC_KEY_LEN) && (*priv_key_len >=
+	    LODP_PRIVATE_KEY_LEN) && (NULL != pub_key) && (NULL !=
+	    priv_key)) {
+		ret = lodp_gen_keypair(&keypair, NULL, 0);
+		if (!ret) {
+			memcpy(pub_key, keypair.public_key.public_key,
+			    LODP_PUBLIC_KEY_LEN);
+			memcpy(priv_key, keypair.private_key.private_key,
+			    LODP_PRIVATE_KEY_LEN);
+		}
+		lodp_memwipe(&keypair, sizeof(keypair));
+	} else
+		ret = LODP_ERR_NOBUFS;
 
-	memcpy(buf, ep->intro_ecdh_keypair.public_key.public_key,
-	    LODP_PUBLIC_KEY_LEN);
-	*len = LODP_PUBLIC_KEY_LEN;
+	*pub_key_len = LODP_PUBLIC_KEY_LEN;
+	*priv_key_len = LODP_PRIVATE_KEY_LEN;
 
-	return (0);
+	return (ret);
 }
 
 
