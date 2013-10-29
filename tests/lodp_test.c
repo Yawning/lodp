@@ -68,6 +68,7 @@ static lodp_callbacks s_test_cbs =
 	&s_on_connect_fn,
 	&s_on_accept_fn,
 	&s_on_recv_fn,
+	NULL,
 	&s_on_close_fn
 };
 
@@ -95,6 +96,7 @@ static lodp_callbacks c_test_cbs =
 	&c_on_connect_fn,
 	&c_on_accept_fn,
 	&c_on_recv_fn,
+	NULL,
 	&c_on_close_fn
 };
 
@@ -135,7 +137,7 @@ main(int argc, char *argv[])
 	pub_len = LODP_PUBLIC_KEY_LEN;
 	priv_len = LODP_PRIVATE_KEY_LEN;
 	ret = lodp_generate_keypair(server_pub_key, &pub_len, server_priv_key,
-	    &priv_len);
+		&priv_len);
 	if (ret) {
 		fprintf(stderr, "ERROR: Failed to generate ecdh keypair (%d)\n",
 		    ret);

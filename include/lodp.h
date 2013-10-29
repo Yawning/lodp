@@ -140,6 +140,25 @@ typedef struct {
 	int (*on_recv_fn)(const lodp_session *, void *, const void *, size_t);
 
 	/*
+	 * Routine invoked whenever a heartbeat ACK arrives on a existng
+	 * connection.
+	 *
+	 * void on_heartbeat_ack(const lodp_session *session, void *session_ctxt,
+	 *     const void *buf, size_t len);
+	 *
+	 * It is the application's responsibility to handle the HEARTBEAT ACK
+	 * payload, and liblodp explicitly does not check to see if the
+	 * HEARTBEAT ACK was generated in response to HEARTBEAT that it actually
+	 * sent or not (The spec suggests sending a payload that allows
+	 * verification of this in the HEARTBEAT packet).
+	 *
+	 * Note:
+	 * This function may be NULL, if HEARTBEAT packets are not used.
+	 */
+	void (*on_heartbeat_ack_fn)(const lodp_session *, void *, const void *,
+	    size_t);
+
+	/*
 	 * Routine invoked whenever a session is closed.
 	 *
 	 * void on_close(const lodp_session *session, void *session_ctxt);
@@ -176,6 +195,7 @@ void lodp_session_set_context(lodp_session *session, void *ctxt);
 void *lodp_session_get_context(lodp_session *session);
 int lodp_handshake(lodp_session *session);
 int lodp_send(lodp_session *session, const void *buf, size_t len);
+int lodp_heartbeat(lodp_session *session, const void *buf, size_t len);
 void lodp_close(lodp_session *session);
 
 

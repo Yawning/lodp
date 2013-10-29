@@ -60,7 +60,6 @@ Implementation notes:
    Attempting to handshake while you already have a session established to a
    given destination will result in the handshake failing, so don't.
  * Things that haven't been implemented yet:
-   * Support for HEARTBEAT/HEARTBEAT ACK packets.
    * Support for REKEY/REKEY ACK packets.
    * HANDSHAKE cookie reuse detection.
    * Randomization of packet length on the wire (Will do, just need to wire up
@@ -72,6 +71,7 @@ TODO:
  * Rate limit INIT ACKs, to prevent amplification attacks (Probably not really
    that big of a deal since the most a malicious peer can hope to get out of us
    is 1 INIT ACK per spoofed INIT.).
+ * Rate limit HEARTBEAT response rate to prevent abuse.
  * Add logging support.
  * Data transfer statistics.
  * Packet length obfuscation.

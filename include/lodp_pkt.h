@@ -97,6 +97,16 @@ typedef struct __attribute__ ((__packed__)) lodp_pkt_handshake_ack_s {
 	uint8_t digest[LODP_MAC_DIGEST_LEN];
 } lodp_pkt_handshake_ack;
 
+typedef struct __attribute__ ((__packed__)) lodp_pkt_heartbeat_s {
+	lodp_hdr hdr;
+	uint8_t data[];
+} lodp_pkt_heartbeat;
+
+typedef struct __attribute__ ((__packed__)) lodp_pkt_heartbeat_ack_s {
+	lodp_hdr hdr;
+	uint8_t data[];
+} lodp_pkt_heartbeat_ack;
+
 
 /*
  * Packet size constants:
@@ -121,6 +131,10 @@ typedef struct __attribute__ ((__packed__)) lodp_pkt_handshake_ack_s {
 #define PKT_HDR_HANDSHAKE_LEN		(sizeof(lodp_pkt_handshake) - PKT_TAG_LEN)
 #define PKT_HANDSHAKE_ACK_LEN		sizeof(lodp_pkt_handshake_ack)
 #define PKT_HDR_HANDSHAKE_ACK_LEN	(sizeof(lodp_pkt_handshake_ack) - PKT_TAG_LEN)
+#define PKT_HEARTBEAT_LEN		sizeof(lodp_pkt_heartbeat)
+#define PKT_HDR_HEARTBEAT_LEN		(sizeof(lodp_pkt_heartbeat) - PKT_TAG_LEN)
+#define PKT_HEARTBEAT_ACK_LEN		sizeof(lodp_pkt_heartbeat_ack)
+#define PKT_HDR_HEARTBEAT_ACK_LEN	(sizeof(lodp_pkt_heartbeat_ack) - PKT_TAG_LEN)
 
 
 /* Cookie */
@@ -134,6 +148,8 @@ int lodp_on_incoming_pkt(lodp_endpoint *ep, lodp_session *session, lodp_buf
 int lodp_send_data_pkt(lodp_session *session, const uint8_t *buf, size_t len);
 int lodp_send_init_pkt(lodp_session *session);
 int lodp_send_handshake_pkt(lodp_session *session);
+int lodp_send_heartbeat_pkt(lodp_session *session, const uint8_t *buf, size_t
+    len);
 
 
 #endif

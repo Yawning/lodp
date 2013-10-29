@@ -431,6 +431,19 @@ lodp_send(lodp_session *session, const void *buf, size_t len)
 }
 
 
+int
+lodp_heartbeat(lodp_session *session, const void *buf, size_t len)
+{
+	if ((NULL == session) || ((buf == NULL) && (0 != len)))
+		return (LODP_ERR_INVAL);
+
+	if (STATE_ESTABLISHED != session->state)
+		return (LODP_ERR_NOTCONN);
+
+	return (lodp_send_heartbeat_pkt(session, buf, len));
+}
+
+
 void
 lodp_close(lodp_session *session)
 {

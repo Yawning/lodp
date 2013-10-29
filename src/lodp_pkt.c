@@ -65,6 +65,10 @@ static int on_data_pkt(lodp_session *session, const lodp_pkt_data *pkt);
 static int on_init_ack_pkt(lodp_session *session, const lodp_pkt_init_ack *pkt);
 static int on_handshake_ack_pkt(lodp_session *session, const
     lodp_pkt_handshake_ack *pkt);
+static int on_heartbeat_pkt(lodp_session *session, const lodp_pkt_heartbeat
+    *hb_pkt);
+static int on_heartbeat_ack_pkt(lodp_session *session, const
+    lodp_pkt_heartbeat_ack *pkt);
 
 
 int
@@ -180,9 +184,13 @@ mac_then_decrypt_ok:
 		case PKT_HANDSHAKE_ACK:
 			return (on_handshake_ack_pkt(session, (lodp_pkt_handshake_ack *)hdr));
 
-		/* TODO: Implement these */
 		case PKT_HEARTBEAT:
+			return (on_heartbeat_pkt(session, (lodp_pkt_heartbeat *)hdr));
+
 		case PKT_HEARTBEAT_ACK:
+			return (on_heartbeat_ack_pkt(session, (lodp_pkt_heartbeat_ack *)hdr));
+
+		/* TODO: Implement these */
 		case PKT_REKEY:
 		case PKT_REKEY_ACK:
 		default:
@@ -330,6 +338,45 @@ lodp_send_handshake_pkt(lodp_session *session)
 out:
 	lodp_buf_free(buf);
 	return (0);
+}
+
+
+int
+lodp_send_heartbeat_pkt(lodp_session *session, const uint8_t *payload, size_t len)
+{
+	lodp_pkt_heartbeat *pkt;
+	lodp_buf *buf;
+	int ret = 0;
+
+	assert(NULL != session);
+	assert(STATE_ESTABLISHED == session->state);
+
+	if (PKT_HEARTBEAT_LEN + len > LODP_MSS)
+		return (LODP_ERR_MSGSIZE);
+
+	buf = lodp_buf_alloc();
+	if (NULL == buf)
+		return (LODP_ERR_NOBUFS);
+
+	buf->len = PKT_HEARTBEAT_LEN + len;
+	assert(buf->len < LODP_MSS);
+
+	pkt = (lodp_pkt_heartbeat *)buf->plaintext;
+	pkt->hdr.type = PKT_HEARTBEAT;
+	pkt->hdr.flags = 0;
+	pkt->hdr.length = htons(PKT_HDR_HEARTBEAT_LEN + len);
+	memcpy(pkt->data, payload, len);
+
+	ret = encrypt_then_mac(&session->tx_key, buf);
+	if (ret)
+		goto out;
+	ret = session->ep->callbacks.sendto_fn(session->ep, session->ep->ctxt,
+		buf->ciphertext, buf->len, (struct sockaddr *)
+		&session->peer_addr, session->peer_addr_len);
+
+out:
+	lodp_buf_free(buf);
+	return (ret);
 }
 
 
@@ -524,8 +571,7 @@ ntor_handshake(lodp_session *session, lodp_ecdh_public_key *pub_key)
 		uint8_t X[LODP_ECDH_PUBLIC_KEY_LEN];
 		uint8_t Y[LODP_ECDH_PUBLIC_KEY_LEN];
 		uint8_t id[sizeof(PROTOID)];
-	}
-	secret_input;
+	} secret_input;
 	struct __attribute__ ((__packed__)) {
 		uint8_t verify[LODP_ECDH_SECRET_LEN];
 		uint8_t B[LODP_ECDH_PUBLIC_KEY_LEN];
@@ -533,8 +579,7 @@ ntor_handshake(lodp_session *session, lodp_ecdh_public_key *pub_key)
 		uint8_t Y[LODP_ECDH_PUBLIC_KEY_LEN];
 		uint8_t id[sizeof(PROTOID)];
 		uint8_t responder[sizeof(RESPONDER)];
-	}
-	auth_input;
+	} auth_input;
 	uint8_t verify[LODP_MAC_DIGEST_LEN];
 	lodp_ecdh_shared_secret secret;
 	const lodp_ecdh_public_key *X;
@@ -698,6 +743,11 @@ on_init_pkt(lodp_endpoint *ep, const lodp_pkt_init *init_pkt, const struct
 	/* Validate the INIT packet */
 	if (PKT_HDR_INIT_LEN != init_pkt->hdr.length)
 		return (LODP_ERR_BAD_PACKET);
+
+	/*
+	 * TODO: Implement rate limiting here, and silently drop the packet if
+	 * rate limiting will be tripped.
+	 */
 
 	/* Pull out the peer's keys */
 	memcpy(key.mac_key.mac_key, init_pkt->intro_mac_key, sizeof(key.mac_key.mac_key));
@@ -1030,4 +1080,85 @@ out:
 	scrub_handshake_material(session);
 	session->ep->callbacks.on_connect_fn(session, session->ctxt, ret);
 	return (ret);
+}
+
+
+static int
+on_heartbeat_pkt(lodp_session *session, const lodp_pkt_heartbeat *hb_pkt)
+{
+	const uint8_t *payload;
+	uint16_t payload_len;
+	lodp_pkt_heartbeat_ack *pkt;
+	lodp_buf *buf;
+	int ret;
+
+	assert(NULL != session);
+	assert(NULL != hb_pkt);
+	assert(PKT_HEARTBEAT == hb_pkt->hdr.type);
+
+	if (session->state != STATE_ESTABLISHED)
+		return (LODP_ERR_BAD_PACKET);
+
+	/*
+	 * TODO: Implement rate limiting here, and silently drop the packet if
+	 * the rate limit will get tripped.
+	 */
+
+	/*
+	 * If execution gets here, the the packet's lenght field is valid, so
+	 * just directly echo the heartbeat data in the HEARTBEAT ACK.
+	 */
+
+	payload = hb_pkt->data;
+	payload_len = hb_pkt->hdr.length - PKT_HDR_HEARTBEAT_LEN;
+
+	buf = lodp_buf_alloc();
+	if (NULL == buf)
+		return (LODP_ERR_NOBUFS);
+
+	buf->len = PKT_HEARTBEAT_ACK_LEN + payload_len;
+	assert(buf->len < LODP_MSS);
+
+	pkt = (lodp_pkt_heartbeat_ack *)buf->plaintext;
+	pkt->hdr.type = PKT_HEARTBEAT_ACK;
+	pkt->hdr.flags = 0;
+	pkt->hdr.length = htons(PKT_HDR_HEARTBEAT_ACK_LEN + payload_len);
+	memcpy(pkt->data, payload, payload_len);
+
+	ret = encrypt_then_mac(&session->tx_key, buf);
+	if (ret)
+		goto out;
+	ret = session->ep->callbacks.sendto_fn(session->ep, session->ep->ctxt,
+		buf->ciphertext, buf->len, (struct sockaddr *)
+		&session->peer_addr, session->peer_addr_len);
+out:
+	lodp_buf_free(buf);
+	return (ret);
+}
+
+
+static int
+on_heartbeat_ack_pkt(lodp_session *session, const lodp_pkt_heartbeat_ack *pkt)
+{
+	const uint8_t *payload;
+	uint16_t payload_len;
+
+	assert(NULL != session);
+	assert(NULL != pkt);
+	assert(PKT_HEARTBEAT_ACK == pkt->hdr.type);
+
+	if (session->state != STATE_ESTABLISHED)
+		return (LODP_ERR_BAD_PACKET);
+
+	/*
+	 * If execution gets here, the the packet's lenght field is valid, so
+	 * just inform the user that a HEARTBEAT ACK has arrived.
+	 */
+
+	payload = pkt->data;
+	payload_len = pkt->hdr.length - PKT_HDR_HEARTBEAT_ACK_LEN;
+	if (NULL != session->ep->callbacks.on_heartbeat_ack_fn)
+		session->ep->callbacks.on_heartbeat_ack_fn(session,
+		    session->ctxt, payload, payload_len);
+	return (0);
 }
