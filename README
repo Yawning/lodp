@@ -67,10 +67,11 @@ Implementation notes:
      a callback so the user can control this).
 
 TODO:
- * Expose the MSS to the application code.
  * Implement the rest of the packet types.
  * HANDSHAKE cookie reuse detection.
- * Rate limit INIT ACK/HANDSHAKE ACKs?
+ * Rate limit INIT ACKs, to prevent amplification attacks (Probably not really
+   that big of a deal since the most a malicious peer can hope to get out of us
+   is 1 INIT ACK per spoofed INIT.).
  * Add logging support.
  * Data transfer statistics.
  * Packet length obfuscation.

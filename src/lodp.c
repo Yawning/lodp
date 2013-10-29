@@ -161,6 +161,16 @@ lodp_endpoint_get_context(const lodp_endpoint *ep)
 }
 
 
+size_t
+lodp_endpoint_get_mss(const lodp_endpoint *ep)
+{
+	assert(NULL != ep);
+
+	/* Return the maximum amount of payload that can be sent/received */
+	return (LODP_MSS - PKT_DATA_LEN);
+}
+
+
 int
 lodp_generate_keypair(uint8_t *pub_key, size_t *pub_key_len, uint8_t *priv_key,
     size_t *priv_key_len)

@@ -164,6 +164,7 @@ lodp_endpoint *lodp_endpoint_bind(void *ctxt, const lodp_callbacks
     *callbacks, const uint8_t *priv_key, size_t priv_key_len);
 void lodp_endpoint_set_context(lodp_endpoint *ep, void *ctxt);
 void *lodp_endpoint_get_context(const lodp_endpoint *ep);
+size_t lodp_endpoint_get_mss(const lodp_endpoint *ep);
 void lodp_endpoint_unbind(lodp_endpoint *ep);
 int lodp_endpoint_on_packet(lodp_endpoint *ep, const uint8_t *buf, size_t len,
     const struct sockaddr *addr, socklen_t addr_len);
