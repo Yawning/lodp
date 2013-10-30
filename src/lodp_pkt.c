@@ -47,7 +47,8 @@ typedef struct {
 
 
 /* Packet/session related crypto */
-static int encrypt_then_mac(lodp_symmetric_key *keys, lodp_buf *buf);
+static int encrypt_then_mac(lodp_endpoint *ep, lodp_symmetric_key *keys,
+    lodp_buf *buf);
 static int mac_then_decrypt(lodp_symmetric_key *keys, lodp_buf *buf);
 static int generate_cookie(lodp_cookie *cookie, int prev_key, lodp_endpoint *ep,
     const lodp_pkt_raw *pkt, const struct sockaddr *addr, socklen_t addr_len);
@@ -244,7 +245,7 @@ lodp_send_data_pkt(lodp_session *session, const uint8_t *payload, size_t len)
 	pkt->hdr.length = htons(PKT_HDR_DATA_LEN + len);
 	memcpy(pkt->data, payload, len);
 
-	ret = encrypt_then_mac(&session->tx_key, buf);
+	ret = encrypt_then_mac(session->ep, &session->tx_key, buf);
 	if (ret)
 		goto out;
 	ret = session->ep->callbacks.sendto_fn(session->ep, session->ep->ctxt,
@@ -284,7 +285,7 @@ lodp_send_init_pkt(lodp_session *session)
 	memcpy(pkt->intro_bulk_key, session->rx_key.bulk_key.bulk_key,
 	    sizeof(pkt->intro_bulk_key));
 
-	ret = encrypt_then_mac(&session->tx_key, buf);
+	ret = encrypt_then_mac(session->ep, &session->tx_key, buf);
 	if (ret)
 		goto out;
 	ret = session->ep->callbacks.sendto_fn(session->ep, session->ep->ctxt,
@@ -328,7 +329,7 @@ lodp_send_handshake_pkt(lodp_session *session)
 	    sizeof(pkt->public_key));
 	memcpy(pkt->cookie, session->cookie, session->cookie_len);
 
-	ret = encrypt_then_mac(&session->tx_key, buf);
+	ret = encrypt_then_mac(session->ep, &session->tx_key, buf);
 	if (ret)
 		goto out;
 	ret = session->ep->callbacks.sendto_fn(session->ep, session->ep->ctxt,
@@ -367,7 +368,7 @@ lodp_send_heartbeat_pkt(lodp_session *session, const uint8_t *payload, size_t le
 	pkt->hdr.length = htons(PKT_HDR_HEARTBEAT_LEN + len);
 	memcpy(pkt->data, payload, len);
 
-	ret = encrypt_then_mac(&session->tx_key, buf);
+	ret = encrypt_then_mac(session->ep, &session->tx_key, buf);
 	if (ret)
 		goto out;
 	ret = session->ep->callbacks.sendto_fn(session->ep, session->ep->ctxt,
@@ -398,23 +399,37 @@ lodp_rotate_cookie_key(lodp_endpoint *ep)
 
 
 static int
-encrypt_then_mac(lodp_symmetric_key *keys, lodp_buf *buf)
+encrypt_then_mac(lodp_endpoint *ep, lodp_symmetric_key *keys, lodp_buf *buf)
 {
 	lodp_hdr *pt_hdr, *ct_hdr;
 	int ret;
 
+	assert(NULL != ep);
 	assert(NULL != keys);
 	assert(NULL != buf);
 	assert(buf->len > 0);
+	assert(buf->len <= LODP_MSS);
 
 	pt_hdr = (lodp_hdr *)buf->plaintext;
 	ct_hdr = (lodp_hdr *)buf->ciphertext;
 
 	/*
-	 * TODO: Optionally allow the user to insert randomized padding here
-	 * with a callback or something.  Would need to pass the endpoint into
-	 * this routine to do that.
+	 * Optionally allow the user to insert randomized padding here with a
+	 * with a callback.
 	 */
+
+	if (NULL != ep->callbacks.pre_encrypt_fn) {
+		ret = ep->callbacks.pre_encrypt_fn(ep, ep->ctxt, buf->len,
+		    LODP_MSS);
+		if (ret > 0) {
+			lodp_log(ep, LODP_LOG_DEBUG, "%d bytes of padding, %d",
+			    ret, buf->len);
+			if (ret + buf->len > LODP_MSS)
+				ret = LODP_MSS - buf->len;
+			lodp_rand_bytes(((void *)pt_hdr) + buf->len, ret);
+			buf->len += ret;
+		}
+	}
 
 	/* Encrypt */
 	lodp_rand_bytes(ct_hdr->iv, sizeof(ct_hdr->iv)); /* Random IV */
@@ -768,7 +783,7 @@ on_init_pkt(lodp_endpoint *ep, const lodp_pkt_init *init_pkt, const struct
 	generate_cookie((lodp_cookie *)pkt->cookie, 0, ep, (lodp_pkt_raw *)init_pkt,
 	    addr, addr_len);
 
-	ret = encrypt_then_mac(&key, buf);
+	ret = encrypt_then_mac(ep, &key, buf);
 	if (ret)
 		goto out;
 	ret = ep->callbacks.sendto_fn(ep, ep->ctxt, buf->ciphertext, buf->len,
@@ -928,7 +943,7 @@ do_xmit:
 	memcpy(pkt->digest, session->session_secret_verifier,
 	    LODP_MAC_DIGEST_LEN);
 
-	ret = encrypt_then_mac(&key, buf);
+	ret = encrypt_then_mac(ep, &key, buf);
 	if (ret)
 		goto out;
 	ret = ep->callbacks.sendto_fn(ep, ep->ctxt, buf->ciphertext, buf->len,
@@ -1128,7 +1143,7 @@ on_heartbeat_pkt(lodp_session *session, const lodp_pkt_heartbeat *hb_pkt)
 	pkt->hdr.length = htons(PKT_HDR_HEARTBEAT_ACK_LEN + payload_len);
 	memcpy(pkt->data, payload, payload_len);
 
-	ret = encrypt_then_mac(&session->tx_key, buf);
+	ret = encrypt_then_mac(session->ep, &session->tx_key, buf);
 	if (ret)
 		goto out;
 	ret = session->ep->callbacks.sendto_fn(session->ep, session->ep->ctxt,

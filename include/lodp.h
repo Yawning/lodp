@@ -190,6 +190,19 @@ typedef struct {
 	 * be ignored.
 	 */
 	void (*on_close_fn)(const lodp_session *, void *);
+
+	/*
+	 * Routine invoked by liblodp before each packet is finalized to allow
+	 * random padding to be inserted.
+	 *
+	 * int pre_encrypt(const lodp_endpoint *endpoint, void *endpoint_ctxt,
+	 *     size_t current_length, size_t mss);
+	 *
+	 * Return the size of the random padding to be appended in bytes.  If
+	 * the amount of padding requested is too large, then it will be shrunk
+	 * down to the MSS (current_length + ret <= mss).
+	 */
+	int (*pre_encrypt_fn)(const lodp_endpoint *, void *, size_t, size_t);
 } lodp_callbacks;
 
 

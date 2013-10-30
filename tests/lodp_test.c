@@ -52,9 +52,10 @@
  */
 
 
-/* This is my logger, there are many others like it but this one is mine */
 static void log_fn(const lodp_endpoint *ep, void *ctxt, lodp_log_level level,
     const char *buf);
+static int pre_encrypt(const lodp_endpoint *ep, void *ctxt, size_t len, size_t
+    mss);
 
 
 /* Server side goo */
@@ -75,7 +76,8 @@ static lodp_callbacks s_test_cbs =
 	&s_on_accept_fn,
 	&s_on_recv_fn,
 	NULL,
-	&s_on_close_fn
+	&s_on_close_fn,
+	&pre_encrypt
 };
 
 static lodp_endpoint *server_ep;
@@ -104,7 +106,8 @@ static lodp_callbacks c_test_cbs =
 	&c_on_accept_fn,
 	&c_on_recv_fn,
 	NULL,
-	&c_on_close_fn
+	&c_on_close_fn,
+	&pre_encrypt
 };
 
 static lodp_endpoint *client_ep;
@@ -245,6 +248,14 @@ log_fn(const lodp_endpoint *ep, void *ctxt, lodp_log_level level, const char
 	} else {
 		fprintf(stdout, "[%d]: Unknown: %s\n", level, buf);
 	}
+}
+
+
+static int
+pre_encrypt(const lodp_endpoint *ep, void *ctxt, size_t len, size_t mss)
+{
+	int range = mss - len;
+	return ottery_rand_range(range);
 }
 
 
