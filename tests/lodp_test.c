@@ -64,6 +64,7 @@ static void s_on_close_fn(const lodp_session *session, void *ctxt);
 
 static lodp_callbacks s_test_cbs =
 {
+	NULL,
 	&s_sendto_fn,
 	&s_on_connect_fn,
 	&s_on_accept_fn,
@@ -92,6 +93,7 @@ static void c_on_close_fn(const lodp_session *session, void *ctxt);
 
 static lodp_callbacks c_test_cbs =
 {
+	NULL,
 	&c_sendto_fn,
 	&c_on_connect_fn,
 	&c_on_accept_fn,
@@ -146,14 +148,14 @@ main(int argc, char *argv[])
 
 	/* Set up the server endpoint */
 	server_ep = lodp_endpoint_bind(NULL, &s_test_cbs, server_priv_key,
-		sizeof(server_priv_key));
+		sizeof(server_priv_key), 1);
 	if (NULL == server_ep) {
 		fprintf(stderr, "ERROR: Failed to initialize server endpoint\n");
 		goto out;
 	}
 
 	/* Set up the client endpoint */
-	client_ep = lodp_endpoint_bind(NULL, &c_test_cbs, NULL, 0);
+	client_ep = lodp_endpoint_bind(NULL, &c_test_cbs, NULL, 0, 1);
 	if (NULL == client_ep) {
 		fprintf(stderr, "ERROR: Failed to initialize client endpoint\n");
 		goto out_serv;

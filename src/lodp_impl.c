@@ -27,7 +27,14 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+
+#include <netinet/in.h>
+#include <arpa/inet.h>
+
+#include <stdarg.h>
+#include <stdio.h>
 #include <stdlib.h>
+
 #include <assert.h>
 
 #include "lodp.h"
@@ -46,6 +53,8 @@ typedef struct lodp_bufpool_s {
 #define BUFPOOL_PT_MAGIC	0xdeadbabe
 #define BUFPOOL_CT_MAGIC	0xbabedead
 #endif
+
+#define MAX_LOG_LEN		256
 
 
 static lodp_bufpool bufpool;
@@ -159,4 +168,82 @@ bufpool_grow(lodp_bufpool *pool)
 	}
 
 	return (0);
+}
+
+
+void
+lodp_log(const lodp_endpoint *ep, lodp_log_level level, const char *fmt, ...)
+{
+	char msg[MAX_LOG_LEN];
+	va_list args;
+	int ret;
+
+	if (NULL == ep->callbacks.log_fn)
+		return;
+
+	va_start(args, fmt);
+	ret = vsnprintf(msg, sizeof(msg), fmt, args);
+	if (ret >= 0)
+		ep->callbacks.log_fn(ep, ep->ctxt, level, msg);
+	lodp_memwipe(msg, sizeof(msg));
+	va_end(args);
+}
+
+
+void
+lodp_session_log(const lodp_session *session, lodp_log_level level, const char
+    *fmt, ...)
+{
+	char msg[MAX_LOG_LEN];
+	va_list args;
+	size_t l;
+	int ret;
+
+	if (NULL == session->ep->callbacks.log_fn)
+		return;
+
+	/*
+	 * Prefix the log message with useful information
+	 * "SesssionHandle (PeerAddr:Port): SessionState - "
+	 */
+
+	ret = snprintf(msg, sizeof(msg), "%p (%s): %d - ", session,
+		session->peer_addr_str, session->state);
+
+	/* Append the log message */
+	l = sizeof(msg) - ret;
+	va_start(args, fmt);
+	ret = vsnprintf(msg + l, sizeof(msg) - l, fmt, args);
+	if (ret >= 0)
+		session->ep->callbacks.log_fn(session->ep, session->ep->ctxt,
+		    level, msg);
+	va_end(args);
+}
+
+
+void
+lodp_straddr(const struct sockaddr *addr, char *buf, size_t len, int unsafe)
+{
+	char addrstr[INET6_ADDRSTRLEN];
+	uint16_t port;
+
+	assert(NULL != addr);
+	assert(NULL != buf);
+	assert(LODP_ADDRSTRLEN == len);
+
+	if (!unsafe) {
+		snprintf(buf, len, "[scrubbed]");
+		return;
+	} else if (AF_INET == addr->sa_family) {
+		struct sockaddr_in *v4addr = (struct sockaddr_in *)addr;
+		inet_ntop(AF_INET, &v4addr->sin_addr, addrstr, sizeof(addrstr));
+		port = ntohs(v4addr->sin_port);
+		snprintf(buf, len, "%s:%d", addrstr, port);
+	} else if (AF_INET6 == addr->sa_family) {
+		struct sockaddr_in6 *v6addr = (struct sockaddr_in6 *)addr;
+		inet_ntop(AF_INET6, &v6addr->sin6_addr, addrstr, sizeof(addrstr));
+		port = ntohs(v6addr->sin6_port);
+		snprintf(buf, len, "[%s]:%d", addrstr, port);
+	} else
+		snprintf(buf, len, "<Unknown Addr Type>");
 }

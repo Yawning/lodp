@@ -88,7 +88,7 @@ lodp_term(void)
 
 lodp_endpoint *
 lodp_endpoint_bind(void *ctxt, const lodp_callbacks *callbacks,
-    const uint8_t *priv_key, size_t priv_key_len)
+    const uint8_t *priv_key, size_t priv_key_len, int unsafe_logging)
 {
 	lodp_endpoint *ep;
 
@@ -111,6 +111,7 @@ lodp_endpoint_bind(void *ctxt, const lodp_callbacks *callbacks,
 		return (NULL);
 
 	ep->ctxt = ctxt;
+	ep->use_unsafe_logging = unsafe_logging;
 	memcpy(&ep->callbacks, callbacks, sizeof(ep->callbacks));
 	/* XXX: Initialize the bloom filter or something */
 	RB_INIT(&ep->sessions);
@@ -311,6 +312,8 @@ lodp_session_init(const void *ctxt, lodp_endpoint *ep, const struct sockaddr
 	memcpy(&session->peer_addr, addr, addr_len);
 	session->peer_addr_len = addr_len;
 	session->peer_addr_hash = lodp_hash(&session->peer_addr, addr_len);
+	lodp_straddr((struct sockaddr *)&session->peer_addr, session->peer_addr_str,
+	    sizeof(session->peer_addr_str), ep->use_unsafe_logging);
 
 	/* Generate the Ephemeral Curve25519 keypair */
 	if (lodp_gen_keypair(&session->session_ecdh_keypair, NULL, 0)) {

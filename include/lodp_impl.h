@@ -40,6 +40,9 @@
 #define _LODP_IMPL_H_
 
 
+#define LODP_ADDRSTRLEN    (INET6_ADDRSTRLEN + 2 + 1 + 5)
+
+
 /* Endpoint */
 struct lodp_endpoint_s {
 	void *			ctxt;           /* User opaque handle */
@@ -58,6 +61,7 @@ struct lodp_endpoint_s {
 
 	/* Endpoint configuration */
 	int			has_intro_keys;
+	int			use_unsafe_logging;
 
 	/* Connection table */
 	RB_HEAD(lodp_ep_sessions, lodp_session_s) sessions;
@@ -98,6 +102,7 @@ struct lodp_session_s {
 	/* Connection Table */
 	struct sockaddr_storage peer_addr;
 	socklen_t		peer_addr_len;
+	char			peer_addr_str[LODP_ADDRSTRLEN];
 	uint64_t		peer_addr_hash;
 	RB_ENTRY(lodp_session_s) entry;
 };
@@ -147,6 +152,12 @@ int lodp_bufpool_init(void);
 lodp_buf *lodp_buf_alloc(void);
 void lodp_buf_free(lodp_buf *buf);
 void lodp_bufpool_free(void);
+
+
+/* Logging helper routines */
+void lodp_log(const lodp_endpoint *ep, lodp_log_level level, const char *fmt, ...);
+void lodp_session_log(const lodp_session *session, lodp_log_level level, const char *fmt, ...);
+void lodp_straddr(const struct sockaddr *addr, char *buf, size_t len, int unsafe);
 
 
 #endif

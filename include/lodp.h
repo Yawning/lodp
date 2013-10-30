@@ -80,8 +80,28 @@ typedef struct lodp_endpoint_s		lodp_endpoint;  /* Endpoint */
 typedef struct lodp_session_s		lodp_session;   /* Session */
 
 
+/* Log level passed to the logging callback */
+typedef enum {
+	LODP_LOG_INFO,  /* informational message */
+	LODP_LOG_ERROR, /* error condition */
+	LODP_LOG_DEBUG, /* debug-level messages */
+} lodp_log_level;
+
+
 /* Callbacks */
 typedef struct {
+	/*
+	 * Routine invoked by liblodp to do logging.
+	 *
+	 * void log(const lodp_endpoint *endpoint, void *endpoint_ctxt,
+	 *     const char *msg);
+	 *
+	 * Keep in mind that liblodp will sanitize logs by default and that
+	 * logging incurs additional overhead.
+	 */
+	void (*log_fn)(const lodp_endpoint *, void *, lodp_log_level, const
+	    char *);
+
 	/*
 	 * Routine invoked by liblodp to do outgoing socket I/O.
 	 *
@@ -180,7 +200,7 @@ int lodp_generate_keypair(uint8_t *pub_key, size_t *pub_key_len, uint8_t *
     priv_key, size_t *priv_key_len);
 
 lodp_endpoint *lodp_endpoint_bind(void *ctxt, const lodp_callbacks
-    *callbacks, const uint8_t *priv_key, size_t priv_key_len);
+    *callbacks, const uint8_t *priv_key, size_t priv_key_len, int unsafe_logging);
 void lodp_endpoint_set_context(lodp_endpoint *ep, void *ctxt);
 void *lodp_endpoint_get_context(const lodp_endpoint *ep);
 size_t lodp_endpoint_get_mss(const lodp_endpoint *ep);

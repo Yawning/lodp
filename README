@@ -70,9 +70,9 @@ TODO:
  * HANDSHAKE cookie reuse detection.
  * Rate limit INIT ACKs, to prevent amplification attacks (Probably not really
    that big of a deal since the most a malicious peer can hope to get out of us
-   is 1 INIT ACK per spoofed INIT.).
+   is 1 INIT ACK per spoofed INIT).
  * Rate limit HEARTBEAT response rate to prevent abuse.
- * Add logging support.
+ * Actually use the logging.
  * Data transfer statistics.
  * Packet length obfuscation.
  * Include the optimized curve25519-donna implementations.
@@ -83,6 +83,11 @@ TODO:
    code does something crazy with reentrant callbacks (lodp_test.c actually does
    this).
  * Clean up/refactor the code to be easier to audit and more obviously correct.
+ * HEARTBEAT/HEARTBEAT ACK packets, like DATA packets should be treated as a
+   sign that the HANDSHAKE ACK packet was received by the initiator (as a
+   established session is present).
+ * Steal better MSS values from somewhere (I seem to recall the uTP developers
+   having researched this fairly extensively).
 
 Eventually someone should do:
  * Write unit tests.
