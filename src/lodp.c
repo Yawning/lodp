@@ -460,7 +460,7 @@ lodp_close(lodp_session *session)
 {
 	assert(NULL != session);
 
-	session->ep->callbacks.on_close_fn(session, session->ctxt);
+	session->ep->callbacks.on_close_fn(session);
 
 	lodp_session_log(session, LODP_LOG_INFO, "Session Closed");
 

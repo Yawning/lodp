@@ -52,21 +52,21 @@
  */
 
 
-static void log_fn(const lodp_endpoint *ep, void *ctxt, lodp_log_level level,
-    const char *buf);
-static int pre_encrypt(const lodp_endpoint *ep, void *ctxt, size_t len, size_t
-    mss);
+static void log_fn(const lodp_endpoint *ep, lodp_log_level level, const char
+    *buf);
+static int pre_encrypt(const lodp_endpoint *ep, const lodp_session *session,
+    size_t len, size_t mss);
 
 
 /* Server side goo */
-static int s_sendto_fn(const lodp_endpoint *ep, void *ctxt, const void *buf,
-    size_t len, const struct sockaddr *addr, socklen_t addr_len);
-static void s_on_connect_fn(const lodp_session *session, void *ctxt, int status);
-static void s_on_accept_fn(const lodp_endpoint *ep, void *ctxt, lodp_session
+static int s_sendto_fn(const lodp_endpoint *ep, const void *buf, size_t len,
+    const struct sockaddr *addr, socklen_t addr_len);
+static void s_on_connect_fn(const lodp_session *session, int status);
+static void s_on_accept_fn(const lodp_endpoint *ep, lodp_session
     *session, const struct sockaddr *addr, socklen_t addr_len);
-static int s_on_recv_fn(const lodp_session *session, void *ctxt, const void *buf,
+static int s_on_recv_fn(const lodp_session *session, const void *buf,
     size_t len);
-static void s_on_close_fn(const lodp_session *session, void *ctxt);
+static void s_on_close_fn(const lodp_session *session);
 
 static lodp_callbacks s_test_cbs =
 {
@@ -89,14 +89,14 @@ static int server_connected;
 
 
 /* Client side goo */
-static int c_sendto_fn(const lodp_endpoint *ep, void *ctxt, const void *buf,
+static int c_sendto_fn(const lodp_endpoint *ep, const void *buf,
     size_t len, const struct sockaddr *addr, socklen_t addr_len);
-static void c_on_connect_fn(const lodp_session *session, void *ctxt, int status);
-static void c_on_accept_fn(const lodp_endpoint *ep, void *ctxt, lodp_session
-    *session, const struct sockaddr *addr, socklen_t addr_len);
-static int c_on_recv_fn(const lodp_session *session, void *ctxt, const void *buf,
-    size_t len);
-static void c_on_close_fn(const lodp_session *session, void *ctxt);
+static void c_on_connect_fn(const lodp_session *session, int status);
+static void c_on_accept_fn(const lodp_endpoint *ep, lodp_session *session,
+    const struct sockaddr *addr, socklen_t addr_len);
+static int c_on_recv_fn(const lodp_session *session, const void *buf, size_t
+    len);
+static void c_on_close_fn(const lodp_session *session);
 
 static lodp_callbacks c_test_cbs =
 {
@@ -238,8 +238,7 @@ out:
 
 
 static void
-log_fn(const lodp_endpoint *ep, void *ctxt, lodp_log_level level, const char
-    *buf)
+log_fn(const lodp_endpoint *ep, lodp_log_level level, const char *buf)
 {
 	if (ep == server_ep) {
 		fprintf(stdout, "[%d]: Server: %s\n", level, buf);
@@ -252,17 +251,19 @@ log_fn(const lodp_endpoint *ep, void *ctxt, lodp_log_level level, const char
 
 
 static int
-pre_encrypt(const lodp_endpoint *ep, void *ctxt, size_t len, size_t mss)
+pre_encrypt(const lodp_endpoint *ep, const lodp_session *session, size_t len,
+    size_t mss)
 {
 	int range = mss - len;
-	return ottery_rand_range(range);
+
+	return (ottery_rand_range(range));
 }
 
 
 /* All the server callbacks. */
 static int
-s_sendto_fn(const lodp_endpoint *ep, void *ctxt, const void *buf,
-    size_t len, const struct sockaddr *addr, socklen_t addr_len)
+s_sendto_fn(const lodp_endpoint *ep, const void *buf, size_t len, const struct
+    sockaddr *addr, socklen_t addr_len)
 {
 	struct sockaddr_in *v4addr;
 	int ret;
@@ -286,7 +287,7 @@ s_sendto_fn(const lodp_endpoint *ep, void *ctxt, const void *buf,
 
 
 static void
-s_on_connect_fn(const lodp_session *session, void *ctxt, int status)
+s_on_connect_fn(const lodp_session *session, int status)
 {
 	/* This should *NEVER* be called */
 	fprintf(stderr, "Server: In on_connect_fn????\n");
@@ -295,8 +296,8 @@ s_on_connect_fn(const lodp_session *session, void *ctxt, int status)
 
 
 static void
-s_on_accept_fn(const lodp_endpoint *ep, void *ctxt, lodp_session
-    *session, const struct sockaddr *addr, socklen_t addr_len)
+s_on_accept_fn(const lodp_endpoint *ep, lodp_session *session, const struct
+    sockaddr *addr, socklen_t addr_len)
 {
 	struct sockaddr_in *v4addr;
 
@@ -314,8 +315,7 @@ s_on_accept_fn(const lodp_endpoint *ep, void *ctxt, lodp_session
 
 
 static int
-s_on_recv_fn(const lodp_session *session, void *ctxt, const void *buf,
-    size_t len)
+s_on_recv_fn(const lodp_session *session, const void *buf, size_t len)
 {
 	int ret;
 
@@ -328,7 +328,7 @@ s_on_recv_fn(const lodp_session *session, void *ctxt, const void *buf,
 
 
 static void
-s_on_close_fn(const lodp_session *session, void *ctxt)
+s_on_close_fn(const lodp_session *session)
 {
 	fprintf(stdout, "Server: Session closed (%p)\n", session);
 }
@@ -336,8 +336,8 @@ s_on_close_fn(const lodp_session *session, void *ctxt)
 
 /* All the client callbacks */
 static int
-c_sendto_fn(const lodp_endpoint *ep, void *ctxt, const void *buf,
-    size_t len, const struct sockaddr *addr, socklen_t addr_len)
+c_sendto_fn(const lodp_endpoint *ep, const void *buf, size_t len, const struct
+    sockaddr *addr, socklen_t addr_len)
 {
 	struct sockaddr_in *v4addr;
 	int ret;
@@ -361,7 +361,7 @@ c_sendto_fn(const lodp_endpoint *ep, void *ctxt, const void *buf,
 
 
 static void
-c_on_connect_fn(const lodp_session *session, void *ctxt, int status)
+c_on_connect_fn(const lodp_session *session, int status)
 {
 	/* Nothing to do yet */
 	assert(session == client_session);
@@ -373,8 +373,8 @@ c_on_connect_fn(const lodp_session *session, void *ctxt, int status)
 
 
 static void
-c_on_accept_fn(const lodp_endpoint *ep, void *ctxt, lodp_session
-    *session, const struct sockaddr *addr, socklen_t addr_len)
+c_on_accept_fn(const lodp_endpoint *ep, lodp_session *session, const struct
+    sockaddr *addr, socklen_t addr_len)
 {
 	/* This should *NEVER* be called */
 	fprintf(stderr, "Client: In on_accept_fn????\n");
@@ -383,8 +383,7 @@ c_on_accept_fn(const lodp_endpoint *ep, void *ctxt, lodp_session
 
 
 static int
-c_on_recv_fn(const lodp_session *session, void *ctxt, const void *buf,
-    size_t len)
+c_on_recv_fn(const lodp_session *session, const void *buf, size_t len)
 {
 	const uint8_t *p = buf;
 	size_t i;
@@ -403,7 +402,7 @@ c_on_recv_fn(const lodp_session *session, void *ctxt, const void *buf,
 
 
 static void
-c_on_close_fn(const lodp_session *session, void *ctxt)
+c_on_close_fn(const lodp_session *session)
 {
 	fprintf(stdout, "Client: Session closed (%p)\n", session);
 }

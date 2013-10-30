@@ -83,8 +83,6 @@ TODO:
      unless wanted without editing the applcation callback.
    * Stop using LODP_MSS for most of the code, and use lodp_endpoint_get_mss()
      instead.
-   * The user callbacks don't need to be passed the endpoint/session contexts
-     because there are accessors, so kill those arguments with fire.
  * Performance related tasks:
    * Include the optimized curve25519-donna implementations.
    * Include the optimized blake2 implementations. (XXX: Is it worth saying
@@ -118,8 +116,6 @@ Might do:
  * Revisit the memory/performance tradeoff currently being made by having a
    gigantic TCB.
  * Modify the third party stuff in src/ext so they don't pollute the namespace.
- * It would be neat if the pre-encryption+mac hook function also passed the
-   session (if any) to the app code.
 
 Things that the protocol should have:
  * It probably is a good idea to rotate the intro keys.

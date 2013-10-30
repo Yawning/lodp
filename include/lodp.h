@@ -93,63 +93,61 @@ typedef struct {
 	/*
 	 * Routine invoked by liblodp to do logging.
 	 *
-	 * void log(const lodp_endpoint *endpoint, void *endpoint_ctxt,
-	 *     const char *msg);
+	 * void log(const lodp_endpoint *endpoint, lodp_log_level leve,
+	 *    const char *msg);
 	 *
 	 * Keep in mind that liblodp will sanitize logs by default and that
 	 * logging incurs additional overhead.
 	 */
-	void (*log_fn)(const lodp_endpoint *, void *, lodp_log_level, const
+	void (*log_fn)(const lodp_endpoint *, lodp_log_level, const
 	    char *);
 
 	/*
 	 * Routine invoked by liblodp to do outgoing socket I/O.
 	 *
-	 * int sendto(const lodp_endpoint *endpoint, void *endpoint_ctxt,
-	 *     const void *buf, size_t len, const struct sockaddr *addr,
-	 *     socklen_t addr_len);
+	 * int sendto(const lodp_endpoint *endpoint, const void *buf,
+	 *     size_t len, const struct sockaddr *addr, socklen_t addr_len);
 	 *
 	 * It is assumed that the I/O call is non-blocking.  The value returned
 	 * from this routine will get propagated back to the return value of
 	 * the liblodp API that caused the socket I/O to be invoked.  Invoking
 	 * any liblodp routines from within the sendto callback is NOT supported.
 	 */
-	int (*sendto_fn)(const lodp_endpoint *, void *, const void *, size_t,
+	int (*sendto_fn)(const lodp_endpoint *, const void *, size_t,
 	    const struct sockaddr *, socklen_t);
 
 	/*
 	 * Routine invoked whenever a connection initiated from the current
 	 * host finishes handshaking (Successfully or not).
 	 *
-	 * void on_connect(const lodp_session *session, void *session_ctxt,
-	 *     int status);
+	 * void on_connect(const lodp_session *session, int status);
 	 *
 	 * Status of 0 is a success, anything else is a error condition.  It is
 	 * safe to call lodp_close(session) in the callback.
 	 */
-	void (*on_connect_fn)(const lodp_session *, void *, int);
+	void (*on_connect_fn)(const lodp_session *, int);
 
 	/*
 	 * Routine invoked whenever a connection initiated by a remote host
 	 * finishes handshaking.
 	 *
-	 * void on_accept_fn(const lodp_endpoint *endpoint, void *endpoint_ctxt,
-	 *     lodp_session *session, const struct sockaddr *addr, socklen_t
-	 *     addr_len);
+	 * void on_accept_fn(const lodp_endpoint *endpoint,
+	 *     lodp_session *session, const struct sockaddr *addr,
+	 *     socklen_t addr_len);
 	 *
 	 * If you decide to close the session before returing from the callback
 	 * keep in mind that LODP already has sent the HANDSHAKE ACK at this
 	 * point, so the peer may end up sending data to you.  That said, the
 	 * behavior is safe.
 	 */
-	void (*on_accept_fn)(const lodp_endpoint *, void *, lodp_session *,
+	void (*on_accept_fn)(const lodp_endpoint *, lodp_session *,
 	    const struct sockaddr *, socklen_t);
 
 	/*
 	 * Routine invoked whenever data arives on a existing connection.
 	 *
-	 * int on_recv(const lodp_session *session, void *session_ctxt,
-	 *     const void *buf, size_t len);
+	 * int on_recv(const lodp_session *session, const void *buf,
+	 *    size_t len);
 	 *
 	 * liblodp owns buf, and it will go away shortly after the return from
 	 * this callback.  Do not keep a pointer to it.
@@ -157,14 +155,14 @@ typedef struct {
 	 * The value returned from this routine will get propagated back to the
 	 * return value of lodp_endpoint_on_packet().
 	 */
-	int (*on_recv_fn)(const lodp_session *, void *, const void *, size_t);
+	int (*on_recv_fn)(const lodp_session *, const void *, size_t);
 
 	/*
 	 * Routine invoked whenever a heartbeat ACK arrives on a existng
 	 * connection.
 	 *
-	 * void on_heartbeat_ack(const lodp_session *session, void *session_ctxt,
-	 *     const void *buf, size_t len);
+	 * void on_heartbeat_ack(const lodp_session *session, const void *buf,
+	 *     size_t len);
 	 *
 	 * It is the application's responsibility to handle the HEARTBEAT ACK
 	 * payload, and liblodp explicitly does not check to see if the
@@ -175,13 +173,13 @@ typedef struct {
 	 * Note:
 	 * This function may be NULL, if HEARTBEAT packets are not used.
 	 */
-	void (*on_heartbeat_ack_fn)(const lodp_session *, void *, const void *,
+	void (*on_heartbeat_ack_fn)(const lodp_session *, const void *,
 	    size_t);
 
 	/*
 	 * Routine invoked whenever a session is closed.
 	 *
-	 * void on_close(const lodp_session *session, void *session_ctxt);
+	 * void on_close(const lodp_session *session);
 	 *
 	 * After returning from this point, things will break if you touch
 	 * session again.  Also LODP does not have explicit termination, so
@@ -189,20 +187,22 @@ typedef struct {
 	 * before you did so as further packets received from the session will
 	 * be ignored.
 	 */
-	void (*on_close_fn)(const lodp_session *, void *);
+	void (*on_close_fn)(const lodp_session *);
 
 	/*
 	 * Routine invoked by liblodp before each packet is finalized to allow
 	 * random padding to be inserted.
 	 *
-	 * int pre_encrypt(const lodp_endpoint *endpoint, void *endpoint_ctxt,
-	 *     size_t current_length, size_t mss);
+	 * int pre_encrypt(const lodp_endpoint *endpoint,
+	 *     const lodp_session *session,  size_t current_length,
+	 *     size_t mss);
 	 *
 	 * Return the size of the random padding to be appended in bytes.  If
 	 * the amount of padding requested is too large, then it will be shrunk
 	 * down to the MSS (current_length + ret <= mss).
 	 */
-	int (*pre_encrypt_fn)(const lodp_endpoint *, void *, size_t, size_t);
+	int (*pre_encrypt_fn)(const lodp_endpoint *, const lodp_session *,
+	    size_t, size_t);
 } lodp_callbacks;
 
 

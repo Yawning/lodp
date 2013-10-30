@@ -192,7 +192,7 @@ lodp_log(const lodp_endpoint *ep, lodp_log_level level, const char *fmt, ...)
 	va_start(args, fmt);
 	ret = vsnprintf(msg + ret, sizeof(msg) - ret, fmt, args);
 	if (ret >= 0)
-		ep->callbacks.log_fn(ep, ep->ctxt, level, msg);
+		ep->callbacks.log_fn(ep, level, msg);
 	lodp_memwipe(msg, sizeof(msg));
 	va_end(args);
 }
@@ -222,8 +222,7 @@ lodp_session_log(const lodp_session *session, lodp_log_level level, const char
 	va_start(args, fmt);
 	ret = vsnprintf(msg + ret, sizeof(msg) - ret, fmt, args);
 	if (ret >= 0)
-		session->ep->callbacks.log_fn(session->ep, session->ep->ctxt,
-		    level, msg);
+		session->ep->callbacks.log_fn(session->ep, level, msg);
 	va_end(args);
 }
 

@@ -47,8 +47,8 @@ typedef struct {
 
 
 /* Packet/session related crypto */
-static int encrypt_then_mac(lodp_endpoint *ep, lodp_symmetric_key *keys,
-    lodp_buf *buf);
+static int encrypt_then_mac(lodp_endpoint *ep, lodp_session *session,
+    lodp_symmetric_key *keys, lodp_buf *buf);
 static int mac_then_decrypt(lodp_symmetric_key *keys, lodp_buf *buf);
 static int generate_cookie(lodp_cookie *cookie, int prev_key, lodp_endpoint *ep,
     const lodp_pkt_raw *pkt, const struct sockaddr *addr, socklen_t addr_len);
@@ -245,12 +245,12 @@ lodp_send_data_pkt(lodp_session *session, const uint8_t *payload, size_t len)
 	pkt->hdr.length = htons(PKT_HDR_DATA_LEN + len);
 	memcpy(pkt->data, payload, len);
 
-	ret = encrypt_then_mac(session->ep, &session->tx_key, buf);
+	ret = encrypt_then_mac(session->ep, session, &session->tx_key, buf);
 	if (ret)
 		goto out;
-	ret = session->ep->callbacks.sendto_fn(session->ep, session->ep->ctxt,
-		buf->ciphertext, buf->len, (struct sockaddr *)
-		&session->peer_addr, session->peer_addr_len);
+	ret = session->ep->callbacks.sendto_fn(session->ep, buf->ciphertext,
+		buf->len, (struct sockaddr *)&session->peer_addr,
+		session->peer_addr_len);
 
 out:
 	lodp_buf_free(buf);
@@ -285,12 +285,12 @@ lodp_send_init_pkt(lodp_session *session)
 	memcpy(pkt->intro_bulk_key, session->rx_key.bulk_key.bulk_key,
 	    sizeof(pkt->intro_bulk_key));
 
-	ret = encrypt_then_mac(session->ep, &session->tx_key, buf);
+	ret = encrypt_then_mac(session->ep, session, &session->tx_key, buf);
 	if (ret)
 		goto out;
-	ret = session->ep->callbacks.sendto_fn(session->ep, session->ep->ctxt,
-		buf->ciphertext, buf->len, (struct sockaddr *)
-		&session->peer_addr, session->peer_addr_len);
+	ret = session->ep->callbacks.sendto_fn(session->ep, buf->ciphertext,
+		buf->len, (struct sockaddr *)&session->peer_addr,
+		session->peer_addr_len);
 
 out:
 	lodp_buf_free(buf);
@@ -329,12 +329,12 @@ lodp_send_handshake_pkt(lodp_session *session)
 	    sizeof(pkt->public_key));
 	memcpy(pkt->cookie, session->cookie, session->cookie_len);
 
-	ret = encrypt_then_mac(session->ep, &session->tx_key, buf);
+	ret = encrypt_then_mac(session->ep, session, &session->tx_key, buf);
 	if (ret)
 		goto out;
-	ret = session->ep->callbacks.sendto_fn(session->ep, session->ep->ctxt,
-		buf->ciphertext, buf->len, (struct sockaddr *)
-		&session->peer_addr, session->peer_addr_len);
+	ret = session->ep->callbacks.sendto_fn(session->ep, buf->ciphertext,
+		buf->len, (struct sockaddr *)&session->peer_addr,
+		session->peer_addr_len);
 
 out:
 	lodp_buf_free(buf);
@@ -368,12 +368,12 @@ lodp_send_heartbeat_pkt(lodp_session *session, const uint8_t *payload, size_t le
 	pkt->hdr.length = htons(PKT_HDR_HEARTBEAT_LEN + len);
 	memcpy(pkt->data, payload, len);
 
-	ret = encrypt_then_mac(session->ep, &session->tx_key, buf);
+	ret = encrypt_then_mac(session->ep, session, &session->tx_key, buf);
 	if (ret)
 		goto out;
-	ret = session->ep->callbacks.sendto_fn(session->ep, session->ep->ctxt,
-		buf->ciphertext, buf->len, (struct sockaddr *)
-		&session->peer_addr, session->peer_addr_len);
+	ret = session->ep->callbacks.sendto_fn(session->ep, buf->ciphertext,
+		buf->len, (struct sockaddr *)&session->peer_addr,
+		session->peer_addr_len);
 
 out:
 	lodp_buf_free(buf);
@@ -399,7 +399,8 @@ lodp_rotate_cookie_key(lodp_endpoint *ep)
 
 
 static int
-encrypt_then_mac(lodp_endpoint *ep, lodp_symmetric_key *keys, lodp_buf *buf)
+encrypt_then_mac(lodp_endpoint *ep, lodp_session *session, lodp_symmetric_key
+    *keys, lodp_buf *buf)
 {
 	lodp_hdr *pt_hdr, *ct_hdr;
 	int ret;
@@ -419,8 +420,8 @@ encrypt_then_mac(lodp_endpoint *ep, lodp_symmetric_key *keys, lodp_buf *buf)
 	 */
 
 	if (NULL != ep->callbacks.pre_encrypt_fn) {
-		ret = ep->callbacks.pre_encrypt_fn(ep, ep->ctxt, buf->len,
-		    LODP_MSS);
+		ret = ep->callbacks.pre_encrypt_fn(ep, session, buf->len,
+			LODP_MSS);
 		if (ret > 0) {
 			lodp_log(ep, LODP_LOG_DEBUG, "%d bytes of padding, %d",
 			    ret, buf->len);
@@ -783,11 +784,11 @@ on_init_pkt(lodp_endpoint *ep, const lodp_pkt_init *init_pkt, const struct
 	generate_cookie((lodp_cookie *)pkt->cookie, 0, ep, (lodp_pkt_raw *)init_pkt,
 	    addr, addr_len);
 
-	ret = encrypt_then_mac(ep, &key, buf);
+	ret = encrypt_then_mac(ep, NULL, &key, buf);
 	if (ret)
 		goto out;
-	ret = ep->callbacks.sendto_fn(ep, ep->ctxt, buf->ciphertext, buf->len,
-		addr, addr_len);
+	ret = ep->callbacks.sendto_fn(ep, buf->ciphertext, buf->len, addr,
+		addr_len);
 
 out:
 	lodp_memwipe(&key, sizeof(key));
@@ -943,16 +944,16 @@ do_xmit:
 	memcpy(pkt->digest, session->session_secret_verifier,
 	    LODP_MAC_DIGEST_LEN);
 
-	ret = encrypt_then_mac(ep, &key, buf);
+	ret = encrypt_then_mac(ep, NULL, &key, buf);
 	if (ret)
 		goto out;
-	ret = ep->callbacks.sendto_fn(ep, ep->ctxt, buf->ciphertext, buf->len,
+	ret = ep->callbacks.sendto_fn(ep, buf->ciphertext, buf->len,
 		(struct sockaddr *)addr, addr_len);
 
 	/* Inform the user of a incoming connection */
 	if (should_callback)
-		session->ep->callbacks.on_accept_fn(ep, ep->ctxt, session,
-		    addr, addr_len);
+		session->ep->callbacks.on_accept_fn(ep, session, addr,
+		    addr_len);
 
 	lodp_session_log(session, LODP_LOG_INFO, "Server Session Initialized");
 
@@ -1004,8 +1005,7 @@ on_data_pkt(lodp_session *session, const lodp_pkt_data *pkt)
 
 	payload = pkt->data;
 	payload_len = pkt->hdr.length - PKT_HDR_DATA_LEN;
-	ret = session->ep->callbacks.on_recv_fn(session, session->ctxt,
-		payload, payload_len);
+	ret = session->ep->callbacks.on_recv_fn(session, payload, payload_len);
 	return (ret);
 }
 
@@ -1041,8 +1041,7 @@ on_init_ack_pkt(lodp_session *session, const lodp_pkt_init_ack *pkt)
 	cookie = calloc(1, cookie_len);
 	if (NULL == cookie) {
 		session->state = STATE_ERROR;
-		session->ep->callbacks.on_connect_fn(session, session->ctxt,
-		    LODP_ERR_NOBUFS);
+		session->ep->callbacks.on_connect_fn(session, LODP_ERR_NOBUFS);
 		return (LODP_ERR_NOBUFS);
 	}
 	memcpy(cookie, pkt->cookie, cookie_len);
@@ -1096,7 +1095,7 @@ on_handshake_ack_pkt(lodp_session *session, const lodp_pkt_handshake_ack *pkt)
 	session->state = STATE_ESTABLISHED;
 out:
 	scrub_handshake_material(session);
-	session->ep->callbacks.on_connect_fn(session, session->ctxt, ret);
+	session->ep->callbacks.on_connect_fn(session, ret);
 	return (ret);
 }
 
@@ -1143,12 +1142,12 @@ on_heartbeat_pkt(lodp_session *session, const lodp_pkt_heartbeat *hb_pkt)
 	pkt->hdr.length = htons(PKT_HDR_HEARTBEAT_ACK_LEN + payload_len);
 	memcpy(pkt->data, payload, payload_len);
 
-	ret = encrypt_then_mac(session->ep, &session->tx_key, buf);
+	ret = encrypt_then_mac(session->ep, session, &session->tx_key, buf);
 	if (ret)
 		goto out;
-	ret = session->ep->callbacks.sendto_fn(session->ep, session->ep->ctxt,
-		buf->ciphertext, buf->len, (struct sockaddr *)
-		&session->peer_addr, session->peer_addr_len);
+	ret = session->ep->callbacks.sendto_fn(session->ep, buf->ciphertext,
+		buf->len, (struct sockaddr *)&session->peer_addr,
+		session->peer_addr_len);
 out:
 	lodp_buf_free(buf);
 	return (ret);
@@ -1176,7 +1175,7 @@ on_heartbeat_ack_pkt(lodp_session *session, const lodp_pkt_heartbeat_ack *pkt)
 	payload = pkt->data;
 	payload_len = pkt->hdr.length - PKT_HDR_HEARTBEAT_ACK_LEN;
 	if (NULL != session->ep->callbacks.on_heartbeat_ack_fn)
-		session->ep->callbacks.on_heartbeat_ack_fn(session,
-		    session->ctxt, payload, payload_len);
+		session->ep->callbacks.on_heartbeat_ack_fn(session, payload,
+		    payload_len);
 	return (0);
 }
