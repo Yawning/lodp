@@ -181,8 +181,16 @@ lodp_log(const lodp_endpoint *ep, lodp_log_level level, const char *fmt, ...)
 	if (NULL == ep->callbacks.log_fn)
 		return;
 
+	/*
+	 * Prefix the log message with useful information
+	 * "EndpointHandle - "
+	 */
+
+	ret = snprintf(msg, sizeof(msg), "%p - ", ep);
+	assert(ret >= 0);
+
 	va_start(args, fmt);
-	ret = vsnprintf(msg, sizeof(msg), fmt, args);
+	ret = vsnprintf(msg + ret, sizeof(msg) - ret, fmt, args);
 	if (ret >= 0)
 		ep->callbacks.log_fn(ep, ep->ctxt, level, msg);
 	lodp_memwipe(msg, sizeof(msg));
@@ -196,7 +204,6 @@ lodp_session_log(const lodp_session *session, lodp_log_level level, const char
 {
 	char msg[MAX_LOG_LEN];
 	va_list args;
-	size_t l;
 	int ret;
 
 	if (NULL == session->ep->callbacks.log_fn)
@@ -209,11 +216,11 @@ lodp_session_log(const lodp_session *session, lodp_log_level level, const char
 
 	ret = snprintf(msg, sizeof(msg), "%p (%s): %d - ", session,
 		session->peer_addr_str, session->state);
+	assert(ret >= 0);
 
 	/* Append the log message */
-	l = sizeof(msg) - ret;
 	va_start(args, fmt);
-	ret = vsnprintf(msg + l, sizeof(msg) - l, fmt, args);
+	ret = vsnprintf(msg + ret, sizeof(msg) - ret, fmt, args);
 	if (ret >= 0)
 		session->ep->callbacks.log_fn(session->ep, session->ep->ctxt,
 		    level, msg);

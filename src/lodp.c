@@ -117,8 +117,10 @@ lodp_endpoint_bind(void *ctxt, const lodp_callbacks *callbacks,
 	RB_INIT(&ep->sessions);
 
 	/* Outgoing only endpoints don't need further initialization */
-	if (NULL == priv_key)
+	if (NULL == priv_key) {
+		lodp_log(ep, LODP_LOG_INFO, "Client Endpoint Bound", ep);
 		return (ep);
+	}
 
 	/* Endpoint that supports incoming connections */
 	ep->has_intro_keys = 1;
@@ -139,6 +141,8 @@ lodp_endpoint_bind(void *ctxt, const lodp_callbacks *callbacks,
 	/* Generate random secrets for the cookie */
 	lodp_rotate_cookie_key(ep);
 	memcpy(&ep->prev_cookie_key, &ep->cookie_key, sizeof(ep->prev_cookie_key));
+
+	lodp_log(ep, LODP_LOG_INFO, "Server Endpoint Bound", ep);
 
 	return (ep);
 }
@@ -215,6 +219,8 @@ lodp_endpoint_unbind(lodp_endpoint *ep)
 		tmp = RB_NEXT(lodp_ep_sessions, &ep->sessions, session);
 		lodp_close(session);
 	}
+
+	lodp_log(ep, LODP_LOG_INFO, "Endpoint Unbound", ep);
 
 	free_endpoint(ep);
 }
@@ -350,6 +356,8 @@ lodp_session_init(const void *ctxt, lodp_endpoint *ep, const struct sockaddr
 	lodp_rand_bytes(&session->rx_key.mac_key, sizeof(session->rx_key.mac_key));
 	lodp_rand_bytes(&session->rx_key.bulk_key, sizeof(session->rx_key.bulk_key));
 
+	lodp_session_log(session, LODP_LOG_INFO, "Client Session Initialized");
+
 add_and_return:
 	RB_INSERT(lodp_ep_sessions, &ep->sessions, session);
 	return (session);
@@ -453,6 +461,9 @@ lodp_close(lodp_session *session)
 	assert(NULL != session);
 
 	session->ep->callbacks.on_close_fn(session, session->ctxt);
+
+	lodp_session_log(session, LODP_LOG_INFO, "Session Closed");
+
 	lodp_session_destroy(session);
 }
 

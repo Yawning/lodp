@@ -88,6 +88,8 @@ TODO:
    established session is present).
  * Steal better MSS values from somewhere (I seem to recall the uTP developers
    having researched this fairly extensively).
+ * Add support for log level, so it's possible to avoid logging overhead unless
+   wanted without editing the applcation callback.
 
 Eventually someone should do:
  * Write unit tests.

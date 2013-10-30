@@ -938,6 +938,9 @@ do_xmit:
 	if (should_callback)
 		session->ep->callbacks.on_accept_fn(ep, ep->ctxt, session,
 		    addr, addr_len);
+
+	lodp_session_log(session, LODP_LOG_INFO, "Server Session Initialized");
+
 out_free:
 	lodp_buf_free(buf);
 	lodp_memwipe(&key, sizeof(key));

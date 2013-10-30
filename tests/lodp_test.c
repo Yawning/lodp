@@ -52,6 +52,11 @@
  */
 
 
+/* This is my logger, there are many others like it but this one is mine */
+static void log_fn(const lodp_endpoint *ep, void *ctxt, lodp_log_level level,
+    const char *buf);
+
+
 /* Server side goo */
 static int s_sendto_fn(const lodp_endpoint *ep, void *ctxt, const void *buf,
     size_t len, const struct sockaddr *addr, socklen_t addr_len);
@@ -64,7 +69,7 @@ static void s_on_close_fn(const lodp_session *session, void *ctxt);
 
 static lodp_callbacks s_test_cbs =
 {
-	NULL,
+	&log_fn,
 	&s_sendto_fn,
 	&s_on_connect_fn,
 	&s_on_accept_fn,
@@ -93,7 +98,7 @@ static void c_on_close_fn(const lodp_session *session, void *ctxt);
 
 static lodp_callbacks c_test_cbs =
 {
-	NULL,
+	&log_fn,
 	&c_sendto_fn,
 	&c_on_connect_fn,
 	&c_on_accept_fn,
@@ -226,6 +231,20 @@ out:
 	lodp_term();
 
 	return (0);
+}
+
+
+static void
+log_fn(const lodp_endpoint *ep, void *ctxt, lodp_log_level level, const char
+    *buf)
+{
+	if (ep == server_ep) {
+		fprintf(stdout, "[%d]: Server: %s\n", level, buf);
+	} else if (ep == client_ep) {
+		fprintf(stdout, "[%d]: Client: %s\n", level, buf);
+	} else {
+		fprintf(stdout, "[%d]: Unknown: %s\n", level, buf);
+	}
 }
 
 
