@@ -66,27 +66,33 @@ Implementation notes:
 TODO:
  * Implement the rest of the packet types.
  * HANDSHAKE cookie reuse detection.
- * Rate limit INIT ACKs, to prevent amplification attacks (Probably not really
-   that big of a deal since the most a malicious peer can hope to get out of us
-   is 1 INIT ACK per spoofed INIT).
- * Rate limit HEARTBEAT response rate to prevent abuse.
  * Data transfer statistics.
- * Include the optimized curve25519-donna implementations.
- * Include the optimized blake2 implementations. (XXX: Is it worth saying
-   "screw 32 bit system performance" and using truncated blake2b?)
- * Reconsider how lodp_buf* works.  With the current callback based design the
-   bufferpool should only have ~2 allocations pending at most, unless the server
-   code does something crazy with reentrant callbacks (lodp_test.c actually does
-   this).
- * Clean up/refactor the code to be easier to audit and more obviously correct.
  * HEARTBEAT/HEARTBEAT ACK packets, like DATA packets should be treated as a
    sign that the HANDSHAKE ACK packet was received by the initiator (as a
    established session is present).
  * Steal better MSS values from somewhere (I seem to recall the uTP developers
    having researched this fairly extensively).
- * Add more useful log messages (actually use more than the INFO level...)
- * Add support for log level, so it's possible to avoid logging overhead unless
-   wanted without editing the applcation callback.
+ * Implement tin foil hat related features.
+   * Rate limit INIT ACKs, to prevent amplification attacks (Probably not
+     important since the most a malicious peer can hope to get out of us
+     is 1 INIT ACK per spoofed INIT).
+   * Rate limit HEARTBEAT response rate to prevent abuse.
+ * Clean up/refactor the code to be easier to audit and more obviously correct.
+   * Add more useful log messages (actually use more than the INFO level...)
+   * Add support for log level, so it's possible to avoid logging overhead
+     unless wanted without editing the applcation callback.
+   * Stop using LODP_MSS for most of the code, and use lodp_endpoint_get_mss()
+     instead.
+   * The user callbacks don't need to be passed the endpoint/session contexts
+     because there are accessors, so kill those arguments with fire.
+ * Performance related tasks:
+   * Include the optimized curve25519-donna implementations.
+   * Include the optimized blake2 implementations. (XXX: Is it worth saying
+     "screw 32 bit system performance" and using truncated blake2b?)
+   * Reconsider how lodp_buf* works.  With the current callback based design
+     the bufferpool should only have ~2 allocations pending at most, unless the
+     server code does something crazy with reentrant callbacks (lodp_test.c
+     actually does this).
 
 Eventually someone should do:
  * Write unit tests.
@@ -112,6 +118,8 @@ Might do:
  * Revisit the memory/performance tradeoff currently being made by having a
    gigantic TCB.
  * Modify the third party stuff in src/ext so they don't pollute the namespace.
+ * It would be neat if the pre-encryption+mac hook function also passed the
+   session (if any) to the app code.
 
 Things that the protocol should have:
  * It probably is a good idea to rotate the intro keys.
