@@ -59,13 +59,19 @@ Implementation notes:
    endpoint is 1.  This is not a LODP limitation but an implementation one.
    Attempting to handshake while you already have a session established to a
    given destination will result in the handshake failing, so don't.
- * HANDSHAKE cookie reuse prevention is done via a bloom filter.  This means
-   that on false positives, the handshake will be rejected.  The current bloom
-   filter false postive rate is 0.001 (1/1000).  When this happens it is
-   neccecary to send an INIT again to obtain a fresh cookie.  lodp_handshake()
-   will automatically fetch a new cookie when this condition occurs.
  * Things that haven't been implemented yet:
    * Support for REKEY/REKEY ACK packets.
+
+Note about -DTINFOIL:
+ * Enabling Tinfoil Hat mode will add extra paranoia checking at the expense of
+   memory and CPU.
+   * HANDSHAKE cookie reuse detection, with a 0.001 false positive rate (+~4
+     KiB/endpoint).  Note that cookie reuse is impossible beyond the cookie's
+     validity window (at most 60 sec after the cookie is generated).
+   * IV reuse detection, with a 0.01 false postive rate (+~2 MiB/endpoint).
+     The IV is 192 bits, so the odds of this happening under normal use are
+     astronomically low, and the detection method used can only maintain ~1.7
+     million packets with the current parameters.
 
 TODO:
  * Implement the rest of the packet types.
@@ -102,14 +108,6 @@ Might do:
  * Support more than 1 connection from a given source IP/port.  However
    an arbitrary number would be bad because each added connection is another MAC
    validation per inbound packet.
- * Add replay protection to data packets
-   * The "easy" way to do it is to detect initialization vector reuse, via a
-     bloom filter or something.
-   * Technically speaking it's not LODP's problem.
-   * IV reuse is extremely bad, but extremely unlikely assuming the CSPRNG is
-     good (Consider using a PRP for IV generation.  Unfortunately the only
-     suitable PRP I can think of is Rijendael with a 192 bit key/block size
-     which is slow and hard to implement well).
  * Think about allowing this to be thread safe.  That said, with the optimized
    crypto on good hardware a single core should be more than enough for a while.
  * At the expense of complicating the code, I could remove the memcpy from

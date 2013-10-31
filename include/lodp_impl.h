@@ -61,7 +61,7 @@ struct lodp_endpoint_s {
 	time_t			cookie_expire_time;     /* Cookie expire time */
 #ifdef TINFOIL
 	lodp_bf *		cookie_filter;		/* Cookie replay */
-	/* XXX: Add a bloom filter or something to detect IV replay */
+	lodp_bf *		iv_filter;		/* IV replay */
 #endif
 
 	/* Endpoint configuration */

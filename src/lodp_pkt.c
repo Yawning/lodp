@@ -7,7 +7,7 @@
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
  *
- *30 * Redistributions of source code must retain the above copyright notice,
+ * * Redistributions of source code must retain the above copyright notice,
  *   this list of conditions and the following disclaimer.
  *
  * * Redistributions in binary form must reproduce the above copyright notice,
@@ -49,7 +49,8 @@ typedef struct {
 /* Packet/session related crypto */
 static int encrypt_then_mac(lodp_endpoint *ep, lodp_session *session,
     lodp_symmetric_key *keys, lodp_buf *buf);
-static int mac_then_decrypt(lodp_symmetric_key *keys, lodp_buf *buf);
+static int mac_then_decrypt(const lodp_endpoint *ep, lodp_symmetric_key *keys,
+    lodp_buf *buf);
 static int generate_cookie(lodp_cookie *cookie, int prev_key, lodp_endpoint *ep,
     const lodp_pkt_raw *pkt, const struct sockaddr *addr, socklen_t addr_len);
 static int ntor_handshake(lodp_session *session, lodp_ecdh_public_key *pub_key);
@@ -97,7 +98,7 @@ lodp_on_incoming_pkt(lodp_endpoint *ep, lodp_session *session, lodp_buf *buf,
 
 	if (NULL != session) {
 		/* Try the session keys first */
-		ret = mac_then_decrypt(&session->rx_key, buf);
+		ret = mac_then_decrypt(ep, &session->rx_key, buf);
 		if (!ret) {
 			used_session_keys = 1;
 			goto mac_then_decrypt_ok;
@@ -112,7 +113,7 @@ lodp_on_incoming_pkt(lodp_endpoint *ep, lodp_session *session, lodp_buf *buf,
 	if (!ep->has_intro_keys)
 		return (LODP_ERR_NOT_RESPONDER);
 
-	ret = mac_then_decrypt(&ep->intro_sym_keys, buf);
+	ret = mac_then_decrypt(ep, &ep->intro_sym_keys, buf);
 	if (ret)
 		return (ret);
 
@@ -464,7 +465,8 @@ encrypt_then_mac(lodp_endpoint *ep, lodp_session *session, lodp_symmetric_key
 
 
 static int
-mac_then_decrypt(lodp_symmetric_key *keys, lodp_buf *buf)
+mac_then_decrypt(const lodp_endpoint *ep, lodp_symmetric_key *keys, lodp_buf
+    *buf)
 {
 	uint8_t digest[LODP_MAC_DIGEST_LEN];
 	lodp_hdr *pt_hdr, *ct_hdr;
@@ -476,6 +478,12 @@ mac_then_decrypt(lodp_symmetric_key *keys, lodp_buf *buf)
 
 	pt_hdr = (lodp_hdr *)buf->plaintext;
 	ct_hdr = (lodp_hdr *)buf->ciphertext;
+
+#ifdef TINFOIL
+	/* Check for possible IV duplication */
+	if (lodp_bf_a2(ep->iv_filter, ct_hdr->iv, sizeof(ct_hdr->iv)))
+		return (LODP_ERR_DUP_IV);
+#endif
 
 	/* MAC */
 	ret = lodp_mac(digest, ct_hdr->iv, &keys->mac_key, sizeof(ct_hdr->mac),

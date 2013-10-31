@@ -113,7 +113,13 @@ lodp_endpoint_bind(void *ctxt, const lodp_callbacks *callbacks,
 	ep->ctxt = ctxt;
 	ep->use_unsafe_logging = unsafe_logging;
 	memcpy(&ep->callbacks, callbacks, sizeof(ep->callbacks));
-	/* XXX: Initialize the bloom filter or something */
+#ifdef TINFOIL
+	ep->iv_filter = lodp_bf_init(500000, 0.01);
+	if (NULL == ep->iv_filter) {
+		free_endpoint(ep);
+		return (NULL);
+	}
+#endif
 	RB_INIT(&ep->sessions);
 
 	/* Outgoing only endpoints don't need further initialization */
@@ -517,6 +523,8 @@ free_endpoint(lodp_endpoint *ep)
 	assert(RB_EMPTY(&ep->sessions));
 
 #ifdef TINFOIL
+	if (NULL != ep->iv_filter)
+		lodp_bf_free(ep->iv_filter);
 	if (NULL != ep->cookie_filter)
 		lodp_bf_free(ep->cookie_filter);
 #endif
