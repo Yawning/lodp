@@ -59,6 +59,11 @@ Implementation notes:
    endpoint is 1.  This is not a LODP limitation but an implementation one.
    Attempting to handshake while you already have a session established to a
    given destination will result in the handshake failing, so don't.
+ * HANDSHAKE cookie reuse prevention is done via a bloom filter.  This means
+   that on false positives, the handshake will be rejected.  The current bloom
+   filter false postive rate is 0.001 (1/1000).  When this happens it is
+   neccecary to send an INIT again to obtain a fresh cookie.  lodp_handshake()
+   will automatically fetch a new cookie when this condition occurs.
  * Things that haven't been implemented yet:
    * Support for REKEY/REKEY ACK packets.
 

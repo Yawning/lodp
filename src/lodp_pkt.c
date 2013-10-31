@@ -39,7 +39,7 @@
 
 #define COOKIE_LEN			LODP_MAC_DIGEST_LEN
 #define COOKIE_ROTATE_INTERVAL		30
-#define COOKIE_GRACE_WINDOW		15
+#define COOKIE_GRACE_WINDOW		30
 
 typedef struct {
 	uint8_t bytes[COOKIE_LEN];
@@ -303,11 +303,27 @@ lodp_send_handshake_pkt(lodp_session *session)
 {
 	lodp_pkt_handshake *pkt;
 	lodp_buf *buf;
+	time_t now = time(NULL);
 	int ret;
 
 	assert(NULL != session);
 	assert(session->is_initiator);
 	assert(STATE_HANDSHAKE == session->state);
+
+	/*
+	 * If it has been long enough that the cookie expired, it is neccecary
+	 * to send an INIT packet instead
+	 */
+
+	if ((session->cookie_time + COOKIE_ROTATE_INTERVAL < now) && (NULL !=
+		    session->cookie)) {
+		session->state = STATE_INIT;
+		lodp_memwipe(session->cookie, session->cookie_len);
+		free(session->cookie);
+		session->cookie = NULL;
+		session->cookie_len = 0;
+		return lodp_send_init_pkt(session);
+	}
 
 	buf = lodp_buf_alloc();
 	if (NULL == buf)
@@ -1070,6 +1086,7 @@ on_init_ack_pkt(lodp_session *session, const lodp_pkt_init_ack *pkt)
 
 	session->cookie = cookie;
 	session->cookie_len = cookie_len;
+	session->cookie_time = time(NULL);
 
 	/* Send a HANDSHAKE */
 	session->state = STATE_HANDSHAKE;

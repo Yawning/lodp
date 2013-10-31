@@ -93,6 +93,7 @@ struct lodp_session_s {
 	lodp_ecdh_public_key	remote_public_key;
 	uint8_t *		cookie;
 	uint16_t		cookie_len;
+	time_t			cookie_time;
 
 	/* Ephemeral Session Keys */
 	lodp_ecdh_keypair	session_ecdh_keypair;
