@@ -11,6 +11,7 @@ set(lodp_SRCS
 	lodp_crypto.c
 	lodp_impl.c
 	lodp_pkt.c
+	lodp_bf.c
 )
 
 add_definitions(-Dchacha_blocks_impl=chacha_blocks_ref
