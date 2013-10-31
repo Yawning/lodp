@@ -38,6 +38,7 @@
 #include "lodp_bf.h"
 
 
+static inline int next_power_2(uint32_t value);
 static inline void get_hashes(uint32_t *hashes, const void *buf, size_t len, int
     k);
 static inline int in_cache(const uint8_t *cache, const uint32_t *hashes, int k,
@@ -60,9 +61,13 @@ struct lodp_bf_s {
 lodp_bf *
 lodp_bf_init(size_t n, double p)
 {
+	static const double ln_2 = 0.69314718055994529;
+	static const double ln_2_sq = 0.48045301391820139;
 	lodp_bf *bf;
+	int k;
 	double m;
-	double k;
+	double nn;
+	double ln_p;
 
 	bf = calloc(sizeof(*bf), 1);
 	if (NULL == bf)
@@ -71,17 +76,20 @@ lodp_bf_init(size_t n, double p)
 	/*
 	 * From https://en.wikipedia.org/wiki/Bloom_filter:
 	 *  m = - n * ln(p) / (ln(2) ^ 2)
+	 *  n = - m * (ln(2) ^ 2) / ln(p)
 	 *  k = m/n * ln(2)
 	 */
 
-	m = -1.0d * ceil(n * log(p) / pow(log(2.0), 2));
-	m = pow(2.0, ceil(log2(m)));
-	k = round(m / n * log(2));
+	ln_p = log(p);	/* Need libm just for this call. :( */
+	m = -1.0d * (n * ln_p + ln_2_sq - 1) / ln_2_sq;
+	m = 1 << next_power_2((uint32_t)m);
+	nn = -1.0d *(m * ln_2_sq + ln_p - 1) / ln_p;
+	k = (int)((m * ln_2 / nn) + 0.5);
 
 	bf->k = (k > 2) ? k : 2; /* Minimum of 2 hashes */
 	bf->mask = (int)m - 1;
 	bf->cache_len = (int)m >> 3;
-	bf->nr_a1_entries_max = n;
+	bf->nr_a1_entries_max = nn;
 	bf->active_1 = calloc(bf->cache_len, 1);
 	bf->active_2 = calloc(bf->cache_len, 1);
 
@@ -111,7 +119,7 @@ lodp_bf_a2(lodp_bf *bf, const void *buf, size_t len)
 
 	/* if x is in the active2 cache then */
 	if (in_cache(bf->active_2, hashes, bf->k, bf->mask))
-		ret = 1;        /* result := true */
+		ret = 2;        /* result := true */
 	else
 		ret = 0;        /* result := false */
 
@@ -148,6 +156,18 @@ lodp_bf_term(lodp_bf *bf)
 	if (NULL != bf->active_2)
 		free(bf->active_2);
 	free(bf);
+}
+
+
+static inline
+int next_power_2(uint32_t value)
+{
+	int i = 0;
+
+	while (value >>= 1)
+		i++;
+
+	return (i + 1);
 }
 
 

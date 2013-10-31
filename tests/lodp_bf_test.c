@@ -67,11 +67,11 @@ main(int argc, char *argv[])
 		}
 	}
 
-	/* Check something not present (1st entry in my test file */
+	/* Check something that should be in a2 */
 	{
 		const char test[] = "10th";
 		ret = lodp_bf_a2(bf, test, sizeof(test));
-		fprintf(stdout, "Test 1 (Should miss): %d\n", ret);
+		fprintf(stdout, "Test 1 (Should hit a2): %d\n", ret);
 	}
 
 	/* Check again, it should be present now */
@@ -86,6 +86,20 @@ main(int argc, char *argv[])
 		const char test[] = "wrote";
 		ret = lodp_bf_a2(bf, test, sizeof(test));
 		fprintf(stdout, "Test 3 (Should hit): %d\n", ret);
+	}
+
+	/* Check for something that should miss */
+	{
+		const char test[] = "NotInDictionary";
+		ret = lodp_bf_a2(bf, test, sizeof(test));
+		fprintf(stdout, "Test 4 (Should miss): %d\n", ret);
+	}
+
+	/* Check again (A1 hit) */
+	{
+		const char test[] = "NotInDictionary";
+		ret = lodp_bf_a2(bf, test, sizeof(test));
+		fprintf(stdout, "Test 5 (Should hit): %d\n", ret);
 	}
 
 	lodp_bf_term(bf);
