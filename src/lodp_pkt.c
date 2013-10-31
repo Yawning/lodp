@@ -479,12 +479,6 @@ mac_then_decrypt(const lodp_endpoint *ep, lodp_symmetric_key *keys, lodp_buf
 	pt_hdr = (lodp_hdr *)buf->plaintext;
 	ct_hdr = (lodp_hdr *)buf->ciphertext;
 
-#ifdef TINFOIL
-	/* Check for possible IV duplication */
-	if (lodp_bf_a2(ep->iv_filter, ct_hdr->iv, sizeof(ct_hdr->iv)))
-		return (LODP_ERR_DUP_IV);
-#endif
-
 	/* MAC */
 	ret = lodp_mac(digest, ct_hdr->iv, &keys->mac_key, sizeof(ct_hdr->mac),
 		buf->len - sizeof(ct_hdr->mac));
@@ -493,6 +487,12 @@ mac_then_decrypt(const lodp_endpoint *ep, lodp_symmetric_key *keys, lodp_buf
 
 	if (lodp_memcmp(digest, ct_hdr->mac, sizeof(digest)))
 		return (LODP_ERR_INVALID_MAC);
+
+#ifdef TINFOIL
+	/* Check for possible IV duplication */
+	if (lodp_bf_a2(ep->iv_filter, ct_hdr->iv, sizeof(ct_hdr->iv)))
+		return (LODP_ERR_DUP_IV);
+#endif
 
 	/* Decrypt */
 	ret = lodp_decrypt(pt_hdr->iv + sizeof(pt_hdr->iv), &keys->bulk_key,
