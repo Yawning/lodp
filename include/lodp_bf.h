@@ -49,6 +49,9 @@
  * Note that lodp_bf_init() assumes the user has a rough idea of how much memory
  * a filter with n entries at a p false positive rate will comsume as it does
  * nothing to prevent the allocation of gigantic filters.
+ *
+ * lodp_bf_a2(): Test-And-Set
+ * lodp_bf_a2_test: Test
  */
 
 
@@ -57,6 +60,7 @@ typedef struct lodp_bf_s   lodp_bf;
 
 lodp_bf *lodp_bf_init(size_t n, double p);
 int lodp_bf_a2(lodp_bf *bf, const void *buf, size_t len);
+int lodp_bf_a2_test(lodp_bf *bf, const void *buf, size_t len);
 void lodp_bf_term(lodp_bf *bf);
 
 

@@ -45,6 +45,7 @@ static inline int in_cache(const uint8_t *cache, const uint32_t *hashes, int k,
     uint32_t mask);
 static inline void add_cache(uint8_t *cache, const uint32_t *hashes, int k,
     uint32_t mask);
+static inline void flip_cache(lodp_bf *bf, const uint32_t *hashes);
 
 
 struct lodp_bf_s {
@@ -127,23 +128,37 @@ lodp_bf_a2(lodp_bf *bf, const void *buf, size_t len)
 	add_cache(bf->active_1, hashes, bf->k, bf->mask);
 
 	/* if the active1 is full then */
-	if (bf->nr_a1_entries++ > bf->nr_a1_entries_max) {
-		uint8_t *tmp;
-
-		/* flush active2 */
-		memset(bf->active_2, 0, bf->cache_len);
-
-		/* switch active1 and 2 */
-		tmp = bf->active_2;
-		bf->active_2 = bf->active_1;
-		bf->active_1 = tmp;
-
-		/* insert x into active1 */
-		add_cache(bf->active_1, hashes, bf->k, bf->mask);
-		bf->nr_a1_entries = 1;
-	}
+	if (bf->nr_a1_entries++ > bf->nr_a1_entries_max)
+		flip_cache(bf, hashes);
 
 	return (ret);
+}
+
+
+int
+lodp_bf_a2_test(lodp_bf *bf, const void *buf, size_t len)
+{
+	uint32_t *hashes;
+
+	hashes = alloca(bf->k * sizeof(uint32_t));
+	get_hashes(hashes, buf, len, bf->k);
+
+	if (in_cache(bf->active_1, hashes, bf->k, bf->mask))
+		return (1);
+
+	if (in_cache(bf->active_2, hashes, bf->k, bf->mask)) {
+		/*
+		 * Yes, despite this being a "Test" routine there's sideffects,
+		 * but said sideeffects only occur when there's a cache hit in
+		 * the active_2 buffer.
+		 */
+		add_cache(bf->active_1, hashes, bf->k, bf->mask);
+		if (bf->nr_a1_entries++ > bf->nr_a1_entries_max)
+			flip_cache(bf, hashes);
+		return (2);
+	}
+
+	return (0);
 }
 
 
@@ -222,4 +237,23 @@ add_cache(uint8_t *cache, const uint32_t *hashes, int k, uint32_t mask)
 		uint32_t idx = hashes[i] & mask;
 		cache[idx/8] |= (1 << (idx & 7));
 	}
+}
+
+
+static inline void
+flip_cache(lodp_bf *bf, const uint32_t *hashes)
+{
+	uint8_t *tmp;
+
+	/* flush active2 */
+	memset(bf->active_2, 0, bf->cache_len);
+
+	/* switch active1 and 2 */
+	tmp = bf->active_2;
+	bf->active_2 = bf->active_1;
+	bf->active_1 = tmp;
+
+	/* insert x into active1 */
+	add_cache(bf->active_1, hashes, bf->k, bf->mask);
+	bf->nr_a1_entries = 1;
 }
