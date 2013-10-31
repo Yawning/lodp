@@ -731,7 +731,7 @@ scrub_handshake_material(lodp_session *session)
 
 	/* Wipe the cookie */
 	if (NULL != session->cookie) {
-		lodp_memwipe(session->cookie, sizeof(session->cookie_len));
+		lodp_memwipe(session->cookie, session->cookie_len);
 		free(session->cookie);
 		session->cookie = NULL;
 	}
