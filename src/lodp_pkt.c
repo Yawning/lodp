@@ -7,7 +7,7 @@
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
  *
- * * Redistributions of source code must retain the above copyright notice,
+ *30 * Redistributions of source code must retain the above copyright notice,
  *   this list of conditions and the following disclaimer.
  *
  * * Redistributions in binary form must reproduce the above copyright notice,
@@ -860,10 +860,12 @@ on_handshake_pkt(lodp_endpoint *ep, lodp_session *session, const
 	}
 
 	/* Check for cookie reuse */
+#ifdef TINFOIL
 	if (lodp_bf_a2_test(ep->cookie_filter, cookie.bytes, COOKIE_LEN)) {
 		ret = LODP_ERR_DUP_COOKIE;
 		goto out;
 	}
+#endif
 
 	/* Pull out the peer's keys */
 	memcpy(key.mac_key.mac_key, hs_pkt->intro_mac_key, sizeof(key.mac_key.mac_key));
@@ -1028,8 +1030,10 @@ on_data_pkt(lodp_session *session, const lodp_pkt_data *pkt)
 	if (!session->seen_peer_data) {
 		session->seen_peer_data = 1;
 		if (!session->is_initiator) {
+#ifdef TINFOIL
 			lodp_bf_a2(session->ep->cookie_filter, session->cookie,
 			    session->cookie_len);
+#endif
 			scrub_handshake_material(session);
 		}
 	}

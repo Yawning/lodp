@@ -6,8 +6,11 @@ if (NOT CMAKE_BUILD_TYPE)
 	set(CMAKE_BUILD_TYPE "Debug")
 endif()
 
+# Enable tinfoil hat mode
+add_definitions(-DTINFOIL)
+
 # Make the compiler more anal and enable support for C99.
-ADD_DEFINITIONS(-Wall -Werror -std=c99)
+add_definitions(-Wall -Werror -std=c99)
 
 # External libraries that we depend on.
 set(LIBOTTERY_PATH /opt/libottery)

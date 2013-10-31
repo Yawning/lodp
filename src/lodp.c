@@ -142,8 +142,10 @@ lodp_endpoint_bind(void *ctxt, const lodp_callbacks *callbacks,
 	lodp_rotate_cookie_key(ep);
 	memcpy(&ep->prev_cookie_key, &ep->cookie_key, sizeof(ep->prev_cookie_key));
 
+#ifdef TINFOIL
 	/* Initialize the cookie replay filter */
 	ep->cookie_filter = lodp_bf_init(1024, 0.001);
+#endif
 
 	lodp_log(ep, LODP_LOG_INFO, "Server Endpoint Bound", ep);
 
@@ -514,8 +516,10 @@ free_endpoint(lodp_endpoint *ep)
 	assert(NULL != ep);
 	assert(RB_EMPTY(&ep->sessions));
 
+#ifdef TINFOIL
 	if (NULL != ep->cookie_filter)
 		lodp_bf_free(ep->cookie_filter);
+#endif
 
 	lodp_memwipe(ep, sizeof(*ep));
 	free(ep);
