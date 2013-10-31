@@ -63,7 +63,6 @@ lodp_bf_init(size_t n, double p)
 	lodp_bf *bf;
 	double m;
 	double k;
-	double nn;
 
 	bf = calloc(sizeof(*bf), 1);
 	if (NULL == bf)
@@ -73,21 +72,16 @@ lodp_bf_init(size_t n, double p)
 	 * From https://en.wikipedia.org/wiki/Bloom_filter:
 	 *  m = - n * ln(p) / (ln(2) ^ 2)
 	 *  k = m/n * ln(2)
-	 *
-	 * Note:
-	 * This implementation rounds up m to the next power of 2 and
-	 * recalculates the capacity (upward).
 	 */
 
 	m = -1.0d * ceil(n * log(p) / pow(log(2.0), 2));
 	m = pow(2.0, ceil(log2(m)));
-	nn = -1.0d * ceil(m * pow(log(2.0), 2) / log(p));
-	k = round(m / nn * log(2));
+	k = round(m / n * log(2));
 
 	bf->k = (k > 2) ? k : 2; /* Minimum of 2 hashes */
 	bf->mask = (int)m - 1;
 	bf->cache_len = (int)m >> 3;
-	bf->nr_a1_entries_max = nn;
+	bf->nr_a1_entries_max = n;
 	bf->active_1 = calloc(bf->cache_len, 1);
 	bf->active_2 = calloc(bf->cache_len, 1);
 
