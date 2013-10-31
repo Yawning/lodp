@@ -61,17 +61,13 @@ Implementation notes:
    given destination will result in the handshake failing, so don't.
  * Things that haven't been implemented yet:
    * Support for REKEY/REKEY ACK packets.
-   * HANDSHAKE cookie reuse detection.
 
 TODO:
  * Implement the rest of the packet types.
- * HANDSHAKE cookie reuse detection.
  * Data transfer statistics.
  * HEARTBEAT/HEARTBEAT ACK packets, like DATA packets should be treated as a
    sign that the HANDSHAKE ACK packet was received by the initiator (as a
    established session is present).
- * Steal better MSS values from somewhere (I seem to recall the uTP developers
-   having researched this fairly extensively).
  * Implement tin foil hat related features.
    * Rate limit INIT ACKs, to prevent amplification attacks (Probably not
      important since the most a malicious peer can hope to get out of us

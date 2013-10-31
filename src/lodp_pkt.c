@@ -543,9 +543,13 @@ generate_cookie(lodp_cookie *cookie, int prev_key, lodp_endpoint *ep,
 	memcpy(p, pkt->payload, LODP_MAC_KEY_LEN + LODP_BULK_KEY_LEN);
 	p += LODP_MAC_KEY_LEN + LODP_BULK_KEY_LEN;
 
-	ret = lodp_mac(cookie->bytes, blob, &ep->cookie_key, COOKIE_LEN,
-		p - blob);
-	lodp_memwipe(cookie, sizeof(cookie));
+	if (prev_key)
+		ret = lodp_mac(cookie->bytes, blob, &ep->prev_cookie_key,
+		    COOKIE_LEN, p - blob);
+	else 
+		ret = lodp_mac(cookie->bytes, blob, &ep->cookie_key,
+		    COOKIE_LEN, p - blob);
+	lodp_memwipe(blob, sizeof(blob));
 	return (ret);
 }
 
@@ -839,6 +843,12 @@ on_handshake_pkt(lodp_endpoint *ep, lodp_session *session, const
 		}
 	}
 
+	/* Check for cookie reuse */
+	if (lodp_bf_a2_test(ep->cookie_filter, cookie.bytes, COOKIE_LEN)) {
+		ret = LODP_ERR_DUP_COOKIE;
+		goto out;
+	}
+
 	/* Pull out the peer's keys */
 	memcpy(key.mac_key.mac_key, hs_pkt->intro_mac_key, sizeof(key.mac_key.mac_key));
 	memcpy(key.bulk_key.bulk_key, hs_pkt->intro_bulk_key, sizeof(key.mac_key.mac_key));
@@ -929,6 +939,15 @@ on_handshake_pkt(lodp_endpoint *ep, lodp_session *session, const
 	if (NULL == session)
 		goto out_free;
 
+	/* Save the cookie */
+	session->cookie = calloc(1, COOKIE_LEN);
+	if (NULL == session->cookie) {
+		ret = LODP_ERR_NOBUFS;
+		goto out_free;
+	}
+	session->cookie_len = COOKIE_LEN;
+	memcpy(session->cookie, cookie.bytes, COOKIE_LEN);
+
 	/* Complete our side of the modified ntor handshake */
 	ret = ntor_handshake(session, &pub_key);
 	if (ret) {
@@ -992,8 +1011,11 @@ on_data_pkt(lodp_session *session, const lodp_pkt_data *pkt)
 
 	if (!session->seen_peer_data) {
 		session->seen_peer_data = 1;
-		if (!session->is_initiator)
+		if (!session->is_initiator) {
+			lodp_bf_a2(session->ep->cookie_filter, session->cookie,
+			    session->cookie_len);
 			scrub_handshake_material(session);
+		}
 	}
 
 	/*

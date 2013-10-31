@@ -71,6 +71,7 @@
 #define LODP_ERR_INVALID_MAC	(-(LODP_ERR | 12))      /* Bad MAC on packet */
 #define LODP_ERR_BAD_PACKET	(-(LODP_ERR | 13))      /* Malformed packet */
 #define LODP_ERR_INVALID_COOKIE	(-(LODP_ERR | 14))      /* Expired cookie */
+#define LODP_ERR_DUP_COOKIE	(-(LODP_ERR | 15))	/* Reused cookie */
 #define LODP_ERR_BAD_HANDSHAKE	(-(LODP_ERR | 15))      /* Handshake failure */
 #define LODP_ERR_BAD_PUBKEY	(-(LODP_ERR | 16))      /* Bad ECDH key */
 

@@ -61,7 +61,7 @@ typedef struct lodp_bf_s   lodp_bf;
 lodp_bf *lodp_bf_init(size_t n, double p);
 int lodp_bf_a2(lodp_bf *bf, const void *buf, size_t len);
 int lodp_bf_a2_test(lodp_bf *bf, const void *buf, size_t len);
-void lodp_bf_term(lodp_bf *bf);
+void lodp_bf_free(lodp_bf *bf);
 
 
 #endif

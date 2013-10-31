@@ -102,7 +102,7 @@ main(int argc, char *argv[])
 		fprintf(stdout, "Test 5 (Should hit): %d\n", ret);
 	}
 
-	lodp_bf_term(bf);
+	lodp_bf_free(bf);
 
 out:
 	fclose(fp);

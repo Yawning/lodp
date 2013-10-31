@@ -95,7 +95,7 @@ lodp_bf_init(size_t n, double p)
 	bf->active_2 = calloc(bf->cache_len, 1);
 
 	if ((NULL == bf->active_1) || (NULL == bf->active_2)) {
-		lodp_bf_term(bf);
+		lodp_bf_free(bf);
 		return (NULL);
 	}
 
@@ -163,7 +163,7 @@ lodp_bf_a2_test(lodp_bf *bf, const void *buf, size_t len)
 
 
 void
-lodp_bf_term(lodp_bf *bf)
+lodp_bf_free(lodp_bf *bf)
 {
 	assert(NULL != bf);
 	if (NULL != bf->active_1)
