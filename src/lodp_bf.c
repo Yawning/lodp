@@ -82,9 +82,9 @@ lodp_bf_init(size_t n, double p)
 	 */
 
 	ln_p = log(p);	/* Need libm just for this call. :( */
-	m = -1.0d * (n * ln_p + ln_2_sq - 1) / ln_2_sq;
+	m = -1.0d * n * ln_p / ln_2_sq;
 	m = 1 << next_power_2((uint32_t)m);
-	nn = -1.0d *(m * ln_2_sq + ln_p - 1) / ln_p;
+	nn = -1.0d * m * ln_2_sq / ln_p;
 	k = (int)((m * ln_2 / nn) + 0.5);
 
 	bf->k = (k > 2) ? k : 2; /* Minimum of 2 hashes */
