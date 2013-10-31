@@ -193,12 +193,12 @@ get_hashes(uint32_t *hashes, const void *buf, size_t len, int k)
 	int i;
 
 	/*
-	 * According to Kirsch and Mitzenmacher, with a suitably good PRF,
-	 * only two calls to a hash algorithm are needed.
+	 * According to Kirsch and Mitzenmacher with a suitably good PRF only
+	 * two calls to a hash algorithm are needed.
 	 *
 	 * We take this one step further and use a single invocation of
-	 * SipHash-2-4 to generate the two hashes that the rest of the hases are
-	 * derived from.
+	 * SipHash-2-4 to generate the two hashes that the rest of the hashes
+	 * are derived from.
 	 *
 	 * See:
 	 * "Less Hashing, Same Performance: Building a Better Bloom Filter"
