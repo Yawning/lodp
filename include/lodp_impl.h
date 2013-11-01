@@ -105,6 +105,11 @@ struct lodp_session_s {
 	lodp_symmetric_key	rx_key;
 	/* XXX: Need an additional set of keys for rekeying */
 
+	/* Replay prevention */
+	uint32_t		tx_last_seq;
+	uint32_t		rx_last_seq;
+	uint64_t		rx_bitmap;
+
 	/* Connection Table */
 	struct sockaddr_storage peer_addr;
 	socklen_t		peer_addr_len;

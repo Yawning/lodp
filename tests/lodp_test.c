@@ -215,10 +215,12 @@ main(int argc, char *argv[])
 		test_payload[i] = i & 0xFF;
 	}
 
-	ret = lodp_send(client_session, test_payload, len);
-	if (ret) {
-		fprintf(stdout, "Send: ERROR: Failed to send to server (%d)\n",
-		    ret);
+	for (i = 0; i < 10; i++) {
+		ret = lodp_send(client_session, test_payload, len);
+		if (ret) {
+			fprintf(stdout, "Send: ERROR: Failed to send to server (%d)\n",
+			    ret);
+		}
 	}
 
 	free(test_payload);

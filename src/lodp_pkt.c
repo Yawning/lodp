@@ -244,6 +244,7 @@ lodp_send_data_pkt(lodp_session *session, const uint8_t *payload, size_t len)
 	pkt->hdr.type = PKT_DATA;
 	pkt->hdr.flags = 0;
 	pkt->hdr.length = htons(PKT_HDR_DATA_LEN + len);
+	pkt->sequence_number = htonl(++session->tx_last_seq);
 	memcpy(pkt->data, payload, len);
 
 	ret = encrypt_then_mac(session->ep, session, &session->tx_key, buf);
@@ -1016,6 +1017,7 @@ static int
 on_data_pkt(lodp_session *session, const lodp_pkt_data *pkt)
 {
 	const uint8_t *payload;
+	uint32_t seq, diff;
 	uint16_t payload_len;
 	int ret;
 
@@ -1027,16 +1029,18 @@ on_data_pkt(lodp_session *session, const lodp_pkt_data *pkt)
 		return (LODP_ERR_BAD_PACKET);
 
 	/*
-	 * If this is the first DATA packet we received over an existing
-	 * connection, and we are the responder, it is safe to wipe the keying
-	 * material used for the HANDSHAKE now.  Before this point, it is
-	 * beneficial to hold onto the shared secret/verifier used for session
-	 * key derivation to save from having to redo the modified ntor
-	 * handshake if a HANDSHAKE ACK gets lost.
+	 * If this is the first DATA packet we received, there is session state
+	 * that needs to be initialized.
 	 */
-
+	
 	if (!session->seen_peer_data) {
 		session->seen_peer_data = 1;
+
+		/*
+		 * If this is the responder, then it is safe to jettison the
+		 * handshake data, as the peer has clearly received the
+		 * HANDSHAKE ACK.
+	         */
 		if (!session->is_initiator) {
 #ifdef TINFOIL
 			lodp_bf_a2(session->ep->cookie_filter, session->cookie,
@@ -1044,6 +1048,35 @@ on_data_pkt(lodp_session *session, const lodp_pkt_data *pkt)
 #endif
 			scrub_handshake_material(session);
 		}
+	}
+
+	/*
+	 * Guard against replay attacks on DATA packets
+	 *
+	 * We implement the sliding window scheme as proposed in 
+	 * RFC2401, with a 64 bit bitmap.  Note that this limits the number of
+	 * packets that anyone can send on a given session without rekeying to
+	 * 2^32, but the rekey algorithm kicks in before then.
+	 */
+
+	seq = ntohl(pkt->sequence_number);
+	if (0 == seq)
+		return (LODP_ERR_BAD_PACKET);
+	if (seq > session->rx_last_seq) {
+		diff = seq - session->rx_last_seq;
+		if (diff < sizeof(session->rx_bitmap * 8)) {
+			session->rx_bitmap <<= diff;
+			session->rx_bitmap |= 1;
+		} else
+			session->rx_bitmap = 1;
+		session->rx_last_seq = seq;
+	} else {
+		diff = session->rx_last_seq - seq;
+		if (diff > sizeof(session->rx_bitmap) * 8)
+			return (LODP_ERR_BAD_PACKET);
+		if (session->rx_bitmap & ((uint64_t)1 << diff))
+			return (LODP_ERR_BAD_PACKET);
+		session->rx_bitmap |= ((uint64_t)1 << diff);
 	}
 
 	/*

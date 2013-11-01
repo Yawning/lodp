@@ -69,6 +69,7 @@ typedef struct __attribute__ ((__packed__)) lodp_pkt_raw_s {
 
 typedef struct __attribute__ ((__packed__)) lodp_pkt_data_s {
 	lodp_hdr hdr;
+	uint32_t sequence_number;
 	uint8_t data[];
 } lodp_pkt_data;
 
