@@ -75,6 +75,7 @@
 #define LODP_ERR_DUP_COOKIE	(-(LODP_ERR | 16))	/* Reused cookie */
 #define LODP_ERR_BAD_HANDSHAKE	(-(LODP_ERR | 17))      /* Handshake failure */
 #define LODP_ERR_BAD_PUBKEY	(-(LODP_ERR | 18))      /* Bad ECDH key */
+#define LODP_ERR_MUST_REKEY	(-(LODP_ERR | 19))	/* Need to rekey */
 
 
 /* Opaque handles for endpoints/connections */
@@ -84,8 +85,9 @@ typedef struct lodp_session_s		lodp_session;   /* Session */
 
 /* Log level passed to the logging callback */
 typedef enum {
-	LODP_LOG_INFO,  /* informational message */
 	LODP_LOG_ERROR, /* error condition */
+	LODP_LOG_WARN,	/* warning message */
+	LODP_LOG_INFO,  /* informational message */
 	LODP_LOG_DEBUG, /* debug-level messages */
 } lodp_log_level;
 
@@ -208,6 +210,22 @@ typedef struct {
 } lodp_callbacks;
 
 
+/* Session Statistics */
+typedef struct {
+	uint64_t tx_bytes;		/* Total bytes sent */
+	uint64_t rx_bytes;		/* Total bytes received */
+
+	uint64_t tx_payload_bytes;	/* DATA bytes sent */
+	uint64_t rx_payload_bytes;	/* DATA bytes received */
+
+	uint32_t gen_id;		/* Generation ID (Counts rekeys) */
+	uint32_t gen_tx_packets;	/* Packets sent this generation */
+	uint32_t gen_rx_packets;	/* Packets received this generation */
+	uint32_t gen_tx_payload_bytes;	/* Bytes sent this generation */
+	uint32_t gen_rx_payload_bytes;	/* Bytes received this generation */
+} lodp_session_stats;
+
+
 int lodp_init(void);
 void lodp_term(void);
 
@@ -216,9 +234,9 @@ int lodp_generate_keypair(uint8_t *pub_key, size_t *pub_key_len, uint8_t *
 
 lodp_endpoint *lodp_endpoint_bind(void *ctxt, const lodp_callbacks
     *callbacks, const uint8_t *priv_key, size_t priv_key_len, int unsafe_logging);
-void lodp_endpoint_set_context(lodp_endpoint *ep, void *ctxt);
-void *lodp_endpoint_get_context(const lodp_endpoint *ep);
-size_t lodp_endpoint_get_mss(const lodp_endpoint *ep);
+int lodp_endpoint_set_context(lodp_endpoint *ep, void *ctxt);
+int lodp_endpoint_get_context(const lodp_endpoint *ep, void **ctxt);
+ssize_t lodp_endpoint_get_mss(const lodp_endpoint *ep);
 void lodp_endpoint_unbind(lodp_endpoint *ep);
 int lodp_endpoint_on_packet(lodp_endpoint *ep, const uint8_t *buf, size_t len,
     const struct sockaddr *addr, socklen_t addr_len);
@@ -226,8 +244,10 @@ int lodp_endpoint_on_packet(lodp_endpoint *ep, const uint8_t *buf, size_t len,
 lodp_session *lodp_connect(const void *ctxt, lodp_endpoint *ep, const struct
     sockaddr *addr, size_t addr_len, const uint8_t *pub_key, size_t
     pub_key_len);
-void lodp_session_set_context(lodp_session *session, void *ctxt);
-void *lodp_session_get_context(lodp_session *session);
+int lodp_session_set_context(lodp_session *session, void *ctxt);
+int lodp_session_get_context(const lodp_session *session, void **ctxt);
+int lodp_session_get_stats(const lodp_session *session, lodp_session_stats
+    *stats);
 int lodp_handshake(lodp_session *session);
 int lodp_send(lodp_session *session, const void *buf, size_t len);
 int lodp_heartbeat(lodp_session *session, const void *buf, size_t len);

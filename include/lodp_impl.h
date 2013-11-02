@@ -88,6 +88,7 @@ struct lodp_session_s {
 
 	lodp_endpoint *		ep;
 	lodp_session_state	state;
+	lodp_session_stats	stats;
 	int			is_initiator;
 	int			seen_peer_data;
 

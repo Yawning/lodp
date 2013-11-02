@@ -159,28 +159,33 @@ lodp_endpoint_bind(void *ctxt, const lodp_callbacks *callbacks,
 }
 
 
-void
+int
 lodp_endpoint_set_context(lodp_endpoint *ep, void *ctxt)
 {
-	assert(NULL != ep);
+	if (NULL == ep)
+		return (LODP_ERR_INVAL);
 
 	ep->ctxt = ctxt;
+	return (0);
 }
 
 
-void *
-lodp_endpoint_get_context(const lodp_endpoint *ep)
+int
+lodp_endpoint_get_context(const lodp_endpoint *ep, void **ctxt)
 {
-	assert(NULL != ep);
+	if ((NULL == ep) || (NULL == ctxt))
+		return (LODP_ERR_INVAL);
 
-	return (ep->ctxt);
+	*ctxt = ep->ctxt;
+	return (0);
 }
 
 
-size_t
+ssize_t
 lodp_endpoint_get_mss(const lodp_endpoint *ep)
 {
-	assert(NULL != ep);
+	if (NULL == ep)
+		return (LODP_ERR_INVAL);
 
 	/* Return the maximum amount of payload that can be sent/received */
 	return (LODP_MSS - PKT_DATA_LEN);
@@ -386,21 +391,37 @@ lodp_session_destroy(lodp_session *session)
 }
 
 
-void
+int
 lodp_session_set_context(lodp_session *session, void *ctxt)
 {
-	assert(NULL != session);
+	if (NULL == session)
+		return (LODP_ERR_INVAL);
 
 	session->ctxt = ctxt;
+	return (0);
 }
 
 
-void *
-lodp_session_get_context(lodp_session *session)
+int
+lodp_session_get_context(const lodp_session *session, void **ctxt)
 {
-	assert(NULL != session);
+	if ((NULL == session) || (NULL == ctxt))
+		return (LODP_ERR_INVAL);
 
-	return (session->ctxt);
+	*ctxt = session->ctxt;
+	return (0);
+}
+
+
+int
+lodp_session_get_stats(const lodp_session *session, lodp_session_stats *stats)
+{
+	if ((NULL == session) || (NULL == stats))
+		return (LODP_ERR_INVAL);
+
+	memcpy(stats, &session->stats, sizeof(*stats));
+
+	return (0);
 }
 
 

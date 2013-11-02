@@ -51,6 +51,7 @@ static int encrypt_then_mac(lodp_endpoint *ep, lodp_session *session,
     lodp_symmetric_key *keys, lodp_buf *buf);
 static int mac_then_decrypt(const lodp_endpoint *ep, lodp_symmetric_key *keys,
     lodp_buf *buf);
+static int session_sendto(lodp_session *session, const lodp_buf *buf);
 static int generate_cookie(lodp_cookie *cookie, int prev_key, lodp_endpoint *ep,
     const lodp_pkt_raw *pkt, const struct sockaddr *addr, socklen_t addr_len);
 static int ntor_handshake(lodp_session *session, lodp_ecdh_public_key *pub_key);
@@ -163,6 +164,8 @@ mac_then_decrypt_ok:
 		 * keys.
 		 */
 
+		session->stats.rx_bytes += buf->len;
+
 		if (!used_session_keys) {
 			if (PKT_HANDSHAKE != hdr->type)
 				return (LODP_ERR_BAD_PACKET);
@@ -247,12 +250,14 @@ lodp_send_data_pkt(lodp_session *session, const uint8_t *payload, size_t len)
 	pkt->sequence_number = htonl(++session->tx_last_seq);
 	memcpy(pkt->data, payload, len);
 
+	session->stats.gen_tx_packets++;
+	session->stats.gen_tx_payload_bytes += len;
+	session->stats.tx_payload_bytes += len;
+
 	ret = encrypt_then_mac(session->ep, session, &session->tx_key, buf);
 	if (ret)
 		goto out;
-	ret = session->ep->callbacks.sendto_fn(session->ep, buf->ciphertext,
-		buf->len, (struct sockaddr *)&session->peer_addr,
-		session->peer_addr_len);
+	ret = session_sendto(session, buf);
 
 out:
 	lodp_buf_free(buf);
@@ -290,9 +295,7 @@ lodp_send_init_pkt(lodp_session *session)
 	ret = encrypt_then_mac(session->ep, session, &session->tx_key, buf);
 	if (ret)
 		goto out;
-	ret = session->ep->callbacks.sendto_fn(session->ep, buf->ciphertext,
-		buf->len, (struct sockaddr *)&session->peer_addr,
-		session->peer_addr_len);
+	ret = session_sendto(session, buf);
 
 out:
 	lodp_buf_free(buf);
@@ -318,13 +321,13 @@ lodp_send_handshake_pkt(lodp_session *session)
 	 */
 
 	if ((session->cookie_time + COOKIE_ROTATE_INTERVAL < now) && (NULL !=
-		    session->cookie)) {
+	    session->cookie)) {
 		session->state = STATE_INIT;
 		lodp_memwipe(session->cookie, session->cookie_len);
 		free(session->cookie);
 		session->cookie = NULL;
 		session->cookie_len = 0;
-		return lodp_send_init_pkt(session);
+		return (lodp_send_init_pkt(session));
 	}
 
 	buf = lodp_buf_alloc();
@@ -350,9 +353,7 @@ lodp_send_handshake_pkt(lodp_session *session)
 	ret = encrypt_then_mac(session->ep, session, &session->tx_key, buf);
 	if (ret)
 		goto out;
-	ret = session->ep->callbacks.sendto_fn(session->ep, buf->ciphertext,
-		buf->len, (struct sockaddr *)&session->peer_addr,
-		session->peer_addr_len);
+	ret = session_sendto(session, buf);
 
 out:
 	lodp_buf_free(buf);
@@ -389,9 +390,7 @@ lodp_send_heartbeat_pkt(lodp_session *session, const uint8_t *payload, size_t le
 	ret = encrypt_then_mac(session->ep, session, &session->tx_key, buf);
 	if (ret)
 		goto out;
-	ret = session->ep->callbacks.sendto_fn(session->ep, buf->ciphertext,
-		buf->len, (struct sockaddr *)&session->peer_addr,
-		session->peer_addr_len);
+	ret = session_sendto(session, buf);
 
 out:
 	lodp_buf_free(buf);
@@ -504,6 +503,24 @@ mac_then_decrypt(const lodp_endpoint *ep, lodp_symmetric_key *keys, lodp_buf
 
 
 static int
+session_sendto(lodp_session *session, const lodp_buf *buf)
+{
+	int ret;
+
+	assert(NULL != session);
+	assert(NULL != buf);
+
+	session->stats.tx_bytes += buf->len;
+
+	ret = session->ep->callbacks.sendto_fn(session->ep, buf->ciphertext,
+		buf->len, (struct sockaddr *)&session->peer_addr,
+		session->peer_addr_len);
+
+	return (ret);
+}
+
+
+static int
 generate_cookie(lodp_cookie *cookie, int prev_key, lodp_endpoint *ep,
     const lodp_pkt_raw *pkt, const struct sockaddr *addr,
     socklen_t addr_len)
@@ -570,10 +587,10 @@ generate_cookie(lodp_cookie *cookie, int prev_key, lodp_endpoint *ep,
 
 	if (prev_key)
 		ret = lodp_mac(cookie->bytes, blob, &ep->prev_cookie_key,
-		    COOKIE_LEN, p - blob);
-	else 
+			COOKIE_LEN, p - blob);
+	else
 		ret = lodp_mac(cookie->bytes, blob, &ep->cookie_key,
-		    COOKIE_LEN, p - blob);
+			COOKIE_LEN, p - blob);
 	lodp_memwipe(blob, sizeof(blob));
 	return (ret);
 }
@@ -818,7 +835,6 @@ on_init_pkt(lodp_endpoint *ep, const lodp_pkt_init *init_pkt, const struct
 		goto out;
 	ret = ep->callbacks.sendto_fn(ep, buf->ciphertext, buf->len, addr,
 		addr_len);
-
 out:
 	lodp_memwipe(&key, sizeof(key));
 	lodp_buf_free(buf);
@@ -1032,7 +1048,7 @@ on_data_pkt(lodp_session *session, const lodp_pkt_data *pkt)
 	 * If this is the first DATA packet we received, there is session state
 	 * that needs to be initialized.
 	 */
-	
+
 	if (!session->seen_peer_data) {
 		session->seen_peer_data = 1;
 
@@ -1040,7 +1056,7 @@ on_data_pkt(lodp_session *session, const lodp_pkt_data *pkt)
 		 * If this is the responder, then it is safe to jettison the
 		 * handshake data, as the peer has clearly received the
 		 * HANDSHAKE ACK.
-	         */
+		 */
 		if (!session->is_initiator) {
 #ifdef TINFOIL
 			lodp_bf_a2(session->ep->cookie_filter, session->cookie,
@@ -1053,7 +1069,7 @@ on_data_pkt(lodp_session *session, const lodp_pkt_data *pkt)
 	/*
 	 * Guard against replay attacks on DATA packets
 	 *
-	 * We implement the sliding window scheme as proposed in 
+	 * We implement the sliding window scheme as proposed in
 	 * RFC2401, with a 64 bit bitmap.  Note that this limits the number of
 	 * packets that anyone can send on a given session without rekeying to
 	 * 2^32, but the rekey algorithm kicks in before then.
@@ -1062,6 +1078,7 @@ on_data_pkt(lodp_session *session, const lodp_pkt_data *pkt)
 	seq = ntohl(pkt->sequence_number);
 	if (0 == seq)
 		return (LODP_ERR_BAD_PACKET);
+
 	if (seq > session->rx_last_seq) {
 		diff = seq - session->rx_last_seq;
 		if (diff < sizeof(session->rx_bitmap * 8)) {
@@ -1074,8 +1091,10 @@ on_data_pkt(lodp_session *session, const lodp_pkt_data *pkt)
 		diff = session->rx_last_seq - seq;
 		if (diff > sizeof(session->rx_bitmap) * 8)
 			return (LODP_ERR_BAD_PACKET);
+
 		if (session->rx_bitmap & ((uint64_t)1 << diff))
 			return (LODP_ERR_BAD_PACKET);
+
 		session->rx_bitmap |= ((uint64_t)1 << diff);
 	}
 
@@ -1088,6 +1107,11 @@ on_data_pkt(lodp_session *session, const lodp_pkt_data *pkt)
 
 	payload = pkt->data;
 	payload_len = pkt->hdr.length - PKT_HDR_DATA_LEN;
+
+	session->stats.gen_rx_packets++;
+	session->stats.gen_rx_payload_bytes += payload_len;
+	session->stats.rx_payload_bytes += payload_len;
+
 	ret = session->ep->callbacks.on_recv_fn(session, payload, payload_len);
 	return (ret);
 }
@@ -1229,9 +1253,8 @@ on_heartbeat_pkt(lodp_session *session, const lodp_pkt_heartbeat *hb_pkt)
 	ret = encrypt_then_mac(session->ep, session, &session->tx_key, buf);
 	if (ret)
 		goto out;
-	ret = session->ep->callbacks.sendto_fn(session->ep, buf->ciphertext,
-		buf->len, (struct sockaddr *)&session->peer_addr,
-		session->peer_addr_len);
+	ret = session_sendto(session, buf);
+
 out:
 	lodp_buf_free(buf);
 	return (ret);
