@@ -128,7 +128,7 @@ lodp_bf_a2(lodp_bf *bf, const void *buf, size_t len)
 	add_cache(bf->active_1, hashes, bf->k, bf->mask);
 
 	/* if the active1 is full then */
-	if (bf->nr_a1_entries++ > bf->nr_a1_entries_max)
+	if (++bf->nr_a1_entries > bf->nr_a1_entries_max)
 		flip_cache(bf, hashes);
 
 	return (ret);
@@ -153,7 +153,7 @@ lodp_bf_a2_test(lodp_bf *bf, const void *buf, size_t len)
 		 * the active_2 buffer.
 		 */
 		add_cache(bf->active_1, hashes, bf->k, bf->mask);
-		if (bf->nr_a1_entries++ > bf->nr_a1_entries_max)
+		if (++bf->nr_a1_entries > bf->nr_a1_entries_max)
 			flip_cache(bf, hashes);
 		return (2);
 	}
