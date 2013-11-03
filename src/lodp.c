@@ -97,7 +97,7 @@ lodp_endpoint_bind(void *ctxt, const lodp_callbacks *callbacks,
 		return (NULL);
 
 	if ((NULL == callbacks->sendto_fn) || (NULL == callbacks->on_recv_fn) ||
-	    (NULL == callbacks->on_close_fn))
+	    (NULL == callbacks->on_close_fn) || (NULL == callbacks->on_rekey_fn))
 		return (NULL);
 
 	if ((NULL == priv_key) && (NULL == callbacks->on_connect_fn))

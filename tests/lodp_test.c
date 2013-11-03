@@ -66,6 +66,7 @@ static void s_on_accept_fn(const lodp_endpoint *ep, lodp_session
     *session, const struct sockaddr *addr, socklen_t addr_len);
 static int s_on_recv_fn(const lodp_session *session, const void *buf,
     size_t len);
+static void s_on_rekey_fn(const lodp_session *session, int status);
 static void s_on_close_fn(const lodp_session *session);
 
 static lodp_callbacks s_test_cbs =
@@ -75,7 +76,7 @@ static lodp_callbacks s_test_cbs =
 	&s_on_connect_fn,
 	&s_on_accept_fn,
 	&s_on_recv_fn,
-	NULL,
+	&s_on_rekey_fn,
 	&s_on_close_fn,
 	&pre_encrypt
 };
@@ -341,6 +342,14 @@ s_on_recv_fn(const lodp_session *session, const void *buf, size_t len)
 	fprintf(stdout, "Server: Echoing Received buffer (%d)", ret);
 
 	return (0);
+}
+
+static void
+s_on_rekey_fn(const lodp_session *session, int status)
+{
+	/* This should *NEVER* be called */
+	fprintf(stderr, "Server: In on_rekey_fn????\n");
+	assert(0);
 }
 
 

@@ -51,9 +51,9 @@ typedef struct {
 
 /* Packet/session related helpers */
 static int encrypt_then_mac(lodp_endpoint *ep, lodp_session *session,
-    lodp_symmetric_key *keys, lodp_buf *buf);
-static int mac_then_decrypt(const lodp_endpoint *ep, lodp_symmetric_key *keys,
-    lodp_buf *buf);
+    const lodp_symmetric_key *keys, lodp_buf *buf);
+static int mac_then_decrypt(const lodp_endpoint *ep, const lodp_symmetric_key
+    *keys, lodp_buf *buf);
 static int generate_cookie(lodp_cookie *cookie, int prev_key, lodp_endpoint *ep,
     const lodp_pkt_raw *pkt, const struct sockaddr *addr, socklen_t addr_len);
 static int ntor_handshake(lodp_session *session, lodp_symmetric_key *init_key,
@@ -336,6 +336,47 @@ out:
 
 
 int
+lodp_send_init_ack_pkt(lodp_endpoint *ep, const lodp_pkt_init *init_pkt, const
+    lodp_symmetric_key *key, const struct sockaddr *addr, socklen_t addr_len)
+{
+	lodp_pkt_init_ack *pkt;
+	lodp_buf *buf;
+	int ret = 0;
+
+	assert(NULL != ep);
+	assert(NULL != init_pkt);
+	assert(NULL != key);
+	assert(NULL != addr);
+
+	/* Generate the INIT ACK */
+	buf = lodp_buf_alloc();
+	if (NULL == buf)
+		return (LODP_ERR_NOBUFS);
+
+	buf->len = PKT_INIT_ACK_LEN + COOKIE_LEN;
+	assert(buf->len < LODP_MSS);
+
+	pkt = (lodp_pkt_init_ack *)buf->plaintext;
+	pkt->hdr.type = PKT_INIT_ACK;
+	pkt->hdr.flags = 0;
+	pkt->hdr.length = htons(PKT_HDR_INIT_ACK_LEN + COOKIE_LEN);
+	ret = generate_cookie((lodp_cookie *)pkt->cookie, 0, ep,
+		(lodp_pkt_raw *)init_pkt, addr, addr_len);
+	if (ret)
+		goto out;
+
+	ret = encrypt_then_mac(ep, NULL, key, buf);
+	if (ret)
+		goto out;
+	ret = ep->callbacks.sendto_fn(ep, buf->ciphertext, buf->len, addr,
+		addr_len);
+out:
+	lodp_buf_free(buf);
+	return (ret);
+}
+
+
+int
 lodp_send_handshake_pkt(lodp_session *session)
 {
 	lodp_pkt_handshake *pkt;
@@ -394,6 +435,53 @@ out:
 
 
 int
+lodp_send_handshake_ack_pkt(lodp_session *session, const lodp_symmetric_key
+    *key)
+{
+	lodp_pkt_handshake_ack *pkt;
+	lodp_buf *buf;
+	int ret = 0;
+
+	assert(NULL != session);
+	assert(NULL != key);
+	assert(!session->is_initiator);
+	assert(!session->seen_peer_data);
+	assert(STATE_ESTABLISHED == session->state);
+
+	/*
+	 * Chances are we will need to send a HANDSHAKE packet, so be optimistic
+	 * and generate a HANDSHAKE ACK with everything but the validator, since
+	 * we can.
+	 */
+	buf = lodp_buf_alloc();
+	if (NULL == buf)
+		return (LODP_ERR_NOBUFS);
+
+	buf->len = PKT_HANDSHAKE_ACK_LEN;
+	assert(buf->len < LODP_MSS);
+
+	pkt = (lodp_pkt_handshake_ack *)buf->plaintext;
+	pkt->hdr.type = PKT_HANDSHAKE_ACK;
+	pkt->hdr.flags = 0;
+	pkt->hdr.length = htons(PKT_HDR_HANDSHAKE_ACK_LEN);
+	memcpy(pkt->public_key,
+	    session->session_ecdh_keypair.public_key.public_key,
+	    sizeof(pkt->public_key));
+	memcpy(pkt->digest, session->session_secret_verifier,
+	    LODP_MAC_DIGEST_LEN);
+
+	ret = encrypt_then_mac(session->ep, NULL, key, buf);
+	if (ret)
+		goto out;
+	ret = session_sendto(session, buf);
+
+out:
+	lodp_buf_free(buf);
+	return (ret);
+}
+
+
+int
 lodp_send_rekey_pkt(lodp_session *session)
 {
 	lodp_pkt_rekey *pkt;
@@ -435,6 +523,50 @@ out:
 }
 
 
+int
+lodp_send_rekey_ack_pkt(lodp_session *session)
+{
+	lodp_pkt_rekey_ack *pkt;
+	lodp_buf *buf;
+	int ret = 0;
+
+	assert(NULL != session);
+	assert(!session->is_initiator);
+	assert(STATE_REKEY == session->state);
+
+	buf = lodp_buf_alloc();
+	if (NULL == buf)
+		return (LODP_ERR_NOBUFS);
+
+	buf->len = PKT_REKEY_ACK_LEN;
+	assert(buf->len < LODP_MSS);
+
+	pkt = (lodp_pkt_rekey_ack *)buf->plaintext;
+	pkt->hdr.type = PKT_REKEY_ACK;
+	pkt->hdr.flags = 0;
+	pkt->hdr.length = htons(PKT_HDR_REKEY_ACK_LEN);
+	pkt->sequence_number = htonl(++session->tx_last_seq);
+	memcpy(pkt->public_key,
+	    session->session_ecdh_keypair.public_key.public_key,
+	    sizeof(pkt->public_key));
+	memcpy(pkt->digest, session->session_secret_verifier,
+	    LODP_MAC_DIGEST_LEN);
+
+	ret = session_tx_seq_ok(session);
+	if (ret)
+		goto out;
+
+	ret = encrypt_then_mac(session->ep, session, &session->tx_key, buf);
+	if (ret)
+		goto out;
+	ret = session_sendto(session, buf);
+
+out:
+	lodp_buf_free(buf);
+	return (ret);
+}
+
+
 void
 lodp_rotate_cookie_key(lodp_endpoint *ep)
 {
@@ -453,7 +585,7 @@ lodp_rotate_cookie_key(lodp_endpoint *ep)
 
 
 static int
-encrypt_then_mac(lodp_endpoint *ep, lodp_session *session, lodp_symmetric_key
+encrypt_then_mac(lodp_endpoint *ep, lodp_session *session, const lodp_symmetric_key
     *keys, lodp_buf *buf)
 {
 	lodp_hdr *pt_hdr, *ct_hdr;
@@ -502,8 +634,8 @@ encrypt_then_mac(lodp_endpoint *ep, lodp_session *session, lodp_symmetric_key
 
 
 static int
-mac_then_decrypt(const lodp_endpoint *ep, lodp_symmetric_key *keys, lodp_buf
-    *buf)
+mac_then_decrypt(const lodp_endpoint *ep, const lodp_symmetric_key *keys,
+    lodp_buf *buf)
 {
 	uint8_t digest[LODP_MAC_DIGEST_LEN];
 	lodp_hdr *pt_hdr, *ct_hdr;
@@ -795,11 +927,6 @@ scrub_handshake_material(lodp_session *session)
 		session->cookie = NULL;
 	}
 
-	if (!session->is_initiator) {
-		lodp_memwipe(&session->remote_public_key,
-		    sizeof(session->remote_public_key));
-	}
-
 	/* Wipe the handshake parameters */
 	lodp_memwipe(&session->session_ecdh_keypair,
 	    sizeof(session->session_ecdh_keypair));
@@ -809,7 +936,7 @@ scrub_handshake_material(lodp_session *session)
 	lodp_memwipe(&session->session_secret_verifier,
 	    sizeof(session->session_secret_verifier));
 
-	/* Wipe the old keys if any */
+	/* Wipe the rekey keys, these are copied before this routine is called */
 	lodp_memwipe(&session->tx_rekey_key, sizeof(session->tx_rekey_key));
 	lodp_memwipe(&session->rx_rekey_key, sizeof(session->rx_rekey_key));
 }
@@ -842,7 +969,8 @@ session_tx_seq_ok(lodp_session *session)
 	 * If the sequence number is 0, then something went horribly wrong and
 	 * the session wasn't rekeyed as it should have been.
 	 *
-	 * (It's also possible that this is the approximately 3 billionth rekey
+	 * Note:
+	 * It's also possible that this is the approximately 3 billionth rekey
 	 * retransmission, but most likely the initiator in this connection is
 	 * fucking broken and doesn't support rekeying.
 	 */
@@ -865,10 +993,10 @@ session_rx_seq_ok(lodp_session *session, uint32_t seq)
 	/*
 	 * Guard against replay attacks on DATA/REKEY/REKEY ACK packets
 	 *
-	 * We implement the sliding window scheme as proposed in
-	 * RFC2401, with a 64 bit bitmap.  Note that this limits the number of
-	 * packets that anyone can send on a given session without rekeying to
-	 * 2^32, but the rekey algorithm kicks in before then.
+	 * We implement the sliding window scheme as proposed in  RFC2401, with
+	 * a 64 bit bitmap.  Note that this limits the number of packets that
+	 * anyone can send on a given session without rekeying to 2^32, but
+	 * the rekey algorithm kicks in before then.
 	 */
 
 	if (0 == seq)
@@ -956,8 +1084,6 @@ on_init_pkt(lodp_endpoint *ep, const lodp_pkt_init *init_pkt, const struct
     sockaddr *addr, socklen_t addr_len)
 {
 	lodp_symmetric_key key;
-	lodp_pkt_init_ack *pkt;
-	lodp_buf *buf;
 	int ret = 0;
 
 	assert(NULL != ep);
@@ -977,29 +1103,9 @@ on_init_pkt(lodp_endpoint *ep, const lodp_pkt_init *init_pkt, const struct
 	memcpy(key.mac_key.mac_key, init_pkt->intro_mac_key, sizeof(key.mac_key.mac_key));
 	memcpy(key.bulk_key.bulk_key, init_pkt->intro_bulk_key, sizeof(key.mac_key.mac_key));
 
-	/* Generate the INIT ACK */
-	buf = lodp_buf_alloc();
-	if (NULL == buf)
-		return (LODP_ERR_NOBUFS);
+	ret = lodp_send_init_ack_pkt(ep, init_pkt, &key, addr, addr_len);
 
-	buf->len = PKT_INIT_ACK_LEN + COOKIE_LEN;
-	assert(buf->len < LODP_MSS);
-
-	pkt = (lodp_pkt_init_ack *)buf->plaintext;
-	pkt->hdr.type = PKT_INIT_ACK;
-	pkt->hdr.flags = 0;
-	pkt->hdr.length = htons(PKT_HDR_INIT_ACK_LEN + COOKIE_LEN);
-	generate_cookie((lodp_cookie *)pkt->cookie, 0, ep, (lodp_pkt_raw *)init_pkt,
-	    addr, addr_len);
-
-	ret = encrypt_then_mac(ep, NULL, &key, buf);
-	if (ret)
-		goto out;
-	ret = ep->callbacks.sendto_fn(ep, buf->ciphertext, buf->len, addr,
-		addr_len);
-out:
 	lodp_memwipe(&key, sizeof(key));
-	lodp_buf_free(buf);
 	return (ret);
 }
 
@@ -1011,8 +1117,6 @@ on_handshake_pkt(lodp_endpoint *ep, lodp_session *session, const
 	lodp_ecdh_public_key pub_key;
 	lodp_symmetric_key key;
 	lodp_cookie cookie;
-	lodp_pkt_handshake_ack *pkt;
-	lodp_buf *buf;
 	time_t now = time(NULL);
 	int should_callback = 1;
 	int ret = 0;
@@ -1058,24 +1162,6 @@ on_handshake_pkt(lodp_endpoint *ep, lodp_session *session, const
 	memcpy(key.mac_key.mac_key, hs_pkt->intro_mac_key, sizeof(key.mac_key.mac_key));
 	memcpy(key.bulk_key.bulk_key, hs_pkt->intro_bulk_key, sizeof(key.mac_key.mac_key));
 	memcpy(pub_key.public_key, hs_pkt->public_key, sizeof(pub_key.public_key));
-
-	/*
-	 * Chances are we will need to send a HANDSHAKE packet, so be optimistic
-	 * and generate a HANDSHAKE ACK with everything but the validator, since
-	 * we can.
-	 */
-	buf = lodp_buf_alloc();
-	if (NULL == buf) {
-		ret = LODP_ERR_NOBUFS;
-		goto out_wipe;
-	}
-	buf->len = PKT_HANDSHAKE_ACK_LEN;
-	assert(buf->len < LODP_MSS);
-
-	pkt = (lodp_pkt_handshake_ack *)buf->plaintext;
-	pkt->hdr.type = PKT_HANDSHAKE_ACK;
-	pkt->hdr.flags = 0;
-	pkt->hdr.length = htons(PKT_HDR_HANDSHAKE_ACK_LEN);
 
 	/*
 	 * If a session exists, a few things can have happened:
@@ -1135,22 +1221,23 @@ on_handshake_pkt(lodp_endpoint *ep, lodp_session *session, const
 		 */
 
 		ret = LODP_ERR_BAD_PACKET;
-		goto out_free;
+		goto out_wipe;
 	}
 
 	/* Generate a TCB */
-	session = lodp_session_init(NULL, ep, addr, addr_len, pkt->public_key,
-		sizeof(pkt->public_key), 0);
+	session = lodp_session_init(NULL, ep, addr, addr_len, hs_pkt->public_key,
+		sizeof(hs_pkt->public_key), 0);
 	if (NULL == session) {
 		ret = LODP_ERR_NOBUFS;
-		goto out_free;
+		goto out_wipe;
 	}
 
 	/* Save the cookie */
 	session->cookie = calloc(1, COOKIE_LEN);
 	if (NULL == session->cookie) {
 		ret = LODP_ERR_NOBUFS;
-		goto out_free;
+		lodp_session_destroy(session);
+		goto out_wipe;
 	}
 	session->cookie_len = COOKIE_LEN;
 	memcpy(session->cookie, cookie.bytes, COOKIE_LEN);
@@ -1160,22 +1247,11 @@ on_handshake_pkt(lodp_endpoint *ep, lodp_session *session, const
 		&pub_key);
 	if (ret) {
 		lodp_session_destroy(session);
-		goto out_free;
+		goto out_wipe;
 	}
 
 do_xmit:
-	/* Finish building the HANDSHAKE ACK and transmit */
-	memcpy(pkt->public_key,
-	    session->session_ecdh_keypair.public_key.public_key,
-	    sizeof(pkt->public_key));
-	memcpy(pkt->digest, session->session_secret_verifier,
-	    LODP_MAC_DIGEST_LEN);
-
-	ret = encrypt_then_mac(ep, NULL, &key, buf);
-	if (ret)
-		goto out_free;
-	ret = ep->callbacks.sendto_fn(ep, buf->ciphertext, buf->len,
-		(struct sockaddr *)addr, addr_len);
+	ret = lodp_send_handshake_ack_pkt(session, &key);
 
 	/* Inform the user of a incoming connection */
 	if (should_callback)
@@ -1184,8 +1260,6 @@ do_xmit:
 
 	lodp_session_log(session, LODP_LOG_INFO, "Server Session Initialized");
 
-out_free:
-	lodp_buf_free(buf);
 out_wipe:
 	lodp_memwipe(&key, sizeof(key));
 	lodp_memwipe(&pub_key, sizeof(pub_key));
@@ -1199,8 +1273,6 @@ static int
 on_rekey_pkt(lodp_session *session, const lodp_pkt_rekey *rk_pkt)
 {
 	lodp_ecdh_public_key pub_key;
-	lodp_pkt_rekey_ack *pkt;
-	lodp_buf *buf;
 	int ret = 0;
 
 	assert(NULL != session);
@@ -1223,7 +1295,8 @@ on_rekey_pkt(lodp_session *session, const lodp_pkt_rekey *rk_pkt)
 	if (ret)
 		return (ret);
 
-	/* XXX: Limit the rekey interval to something sane so that a
+	/*
+	 * TODO: Limit the rekey interval to something sane so that a
 	 * broken/malicious client can't force us to spend a stupid amount of
 	 * time doing ECDH math
 	 */
@@ -1275,37 +1348,8 @@ on_rekey_pkt(lodp_session *session, const lodp_pkt_rekey *rk_pkt)
 	    sizeof(session->remote_public_key));
 
 do_xmit:
-	/* Generate the REKEY ACK packet */
-	buf = lodp_buf_alloc();
-	if (NULL == buf) {
-		ret = LODP_ERR_NOBUFS;
-		goto out;
-	}
-	buf->len = PKT_REKEY_ACK_LEN;
-	assert(buf->len < LODP_MSS);
+	ret = lodp_send_rekey_ack_pkt(session);
 
-	pkt = (lodp_pkt_rekey_ack *)buf->plaintext;
-	pkt->hdr.type = PKT_REKEY_ACK;
-	pkt->hdr.flags = 0;
-	pkt->hdr.length = htons(PKT_HDR_REKEY_ACK_LEN);
-	pkt->sequence_number = htonl(++session->tx_last_seq);
-	memcpy(pkt->public_key,
-	    session->session_ecdh_keypair.public_key.public_key,
-	    sizeof(pkt->public_key));
-	memcpy(pkt->digest, session->session_secret_verifier,
-	    LODP_MAC_DIGEST_LEN);
-
-	ret = session_tx_seq_ok(session);
-	if (ret)
-		goto out_free;
-
-	ret = encrypt_then_mac(session->ep, session, &session->tx_key, buf);
-	if (ret)
-		goto out_free;
-	ret = session_sendto(session, buf);
-
-out_free:
-	lodp_buf_free(buf);
 out:
 	lodp_memwipe(&pub_key, sizeof(pub_key));
 	return (ret);

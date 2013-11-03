@@ -49,7 +49,7 @@ typedef enum {
 } lodp_pkt_type;
 
 
-typedef struct __attribute__ ((__packed__)) lodp_hdr_s {
+typedef struct __attribute__ ((__packed__)) {
 	/* The authenticated encryption tag */
 	uint8_t mac[LODP_MAC_DIGEST_LEN];
 	uint8_t iv[LODP_BULK_IV_LEN];
@@ -60,29 +60,29 @@ typedef struct __attribute__ ((__packed__)) lodp_hdr_s {
 	uint16_t length;
 } lodp_hdr;
 
-typedef struct __attribute__ ((__packed__)) lodp_pkt_raw_s {
+typedef struct __attribute__ ((__packed__)) {
 	lodp_hdr hdr;
 	uint8_t payload[];
 } lodp_pkt_raw;
 
-typedef struct __attribute__ ((__packed__)) lodp_pkt_data_s {
+typedef struct __attribute__ ((__packed__)) {
 	lodp_hdr hdr;
 	uint32_t sequence_number;
 	uint8_t data[];
 } lodp_pkt_data;
 
-typedef struct __attribute__ ((__packed__)) lodp_pkt_init_s {
+typedef struct __attribute__ ((__packed__)) {
 	lodp_hdr hdr;
 	uint8_t intro_mac_key[LODP_MAC_KEY_LEN];
 	uint8_t intro_bulk_key[LODP_MAC_KEY_LEN];
 } lodp_pkt_init;
 
-typedef struct __attribute__ ((__packed__)) lodp_pkt_init_ack_s {
+typedef struct __attribute__ ((__packed__)) {
 	lodp_hdr hdr;
 	uint8_t cookie[];
 } lodp_pkt_init_ack;
 
-typedef struct __attribute__ ((__packed__)) lodp_pkt_handshake_s {
+typedef struct __attribute__ ((__packed__)) {
 	lodp_hdr hdr;
 	uint8_t intro_mac_key[LODP_MAC_KEY_LEN];
 	uint8_t intro_bulk_key[LODP_MAC_KEY_LEN];
@@ -90,19 +90,19 @@ typedef struct __attribute__ ((__packed__)) lodp_pkt_handshake_s {
 	uint8_t cookie[];
 } lodp_pkt_handshake;
 
-typedef struct __attribute__ ((__packed__)) lodp_pkt_handshake_ack_s {
+typedef struct __attribute__ ((__packed__)) {
 	lodp_hdr hdr;
 	uint8_t public_key[LODP_ECDH_PUBLIC_KEY_LEN];
 	uint8_t digest[LODP_MAC_DIGEST_LEN];
 } lodp_pkt_handshake_ack;
 
-typedef struct __attribute__ ((__packed__)) lodp_pkt_rekey_s {
+typedef struct __attribute__ ((__packed__)) {
 	lodp_hdr hdr;
 	uint32_t sequence_number;
 	uint8_t public_key[LODP_ECDH_PUBLIC_KEY_LEN];
 } lodp_pkt_rekey;
 
-typedef struct __attribute__ ((__packed__)) lodp_pkt_rekey_ack_s {
+typedef struct __attribute__ ((__packed__)) {
 	lodp_hdr hdr;
 	uint32_t sequence_number;
 	uint8_t public_key[LODP_ECDH_PUBLIC_KEY_LEN];
@@ -149,8 +149,14 @@ int lodp_on_incoming_pkt(lodp_endpoint *ep, lodp_session *session, lodp_buf
 /* Outgoing packets */
 int lodp_send_data_pkt(lodp_session *session, const uint8_t *buf, size_t len);
 int lodp_send_init_pkt(lodp_session *session);
+int lodp_send_init_ack_pkt(lodp_endpoint *ep, const lodp_pkt_init *init_pkt,
+    const lodp_symmetric_key *key, const struct sockaddr *addr, socklen_t
+    addr_len);
 int lodp_send_handshake_pkt(lodp_session *session);
+int lodp_send_handshake_ack_pkt(lodp_session *session, const lodp_symmetric_key
+    *key);
 int lodp_send_rekey_pkt(lodp_session *session);
+int lodp_send_rekey_ack_pkt(lodp_session *session);
 
 
 #endif
