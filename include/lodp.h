@@ -76,7 +76,8 @@
 #define LODP_ERR_BAD_PACKET		(-(LODP_ERR | 17))      /* Malformed packet */
 #define LODP_ERR_BAD_HANDSHAKE		(-(LODP_ERR | 18))      /* Handshake failure */
 #define LODP_ERR_BAD_PUBKEY		(-(LODP_ERR | 19))      /* Bad ECDH key */
-#define LODP_ERR_MUST_REKEY		(-(LODP_ERR | 20))      /* Need to rekey */
+#define LODP_ERR_BAD_SEQUENCE_NR	(-(LODP_ERR | 20))      /* Bad sequence number */
+#define LODP_ERR_MUST_REKEY		(-(LODP_ERR | 21))      /* Need to rekey */
 
 
 /* Opaque handles for endpoints/connections */

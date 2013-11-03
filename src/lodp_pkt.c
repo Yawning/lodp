@@ -1001,7 +1001,7 @@ session_rx_seq_ok(lodp_session *session, uint32_t seq)
 	 */
 
 	if (0 == seq)
-		return (LODP_ERR_BAD_PACKET);
+		return (LODP_ERR_BAD_SEQUENCE_NR);
 
 	if (seq > session->rx_last_seq) {
 		diff = seq - session->rx_last_seq;
@@ -1019,11 +1019,11 @@ session_rx_seq_ok(lodp_session *session, uint32_t seq)
 
 		/* To the left of the windw */
 		if (diff > sizeof(session->rx_bitmap) * 8)
-			return (LODP_ERR_BAD_PACKET);
+			return (LODP_ERR_BAD_SEQUENCE_NR);
 
 		/* Seen in the bitmap */
 		if (session->rx_bitmap & ((uint64_t)1 << diff))
-			return (LODP_ERR_BAD_PACKET);
+			return (LODP_ERR_BAD_SEQUENCE_NR);
 
 		session->rx_bitmap |= ((uint64_t)1 << diff);
 	}
