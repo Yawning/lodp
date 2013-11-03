@@ -1504,6 +1504,7 @@ on_handshake_ack_pkt(lodp_session *session, const lodp_pkt_handshake_ack *pkt)
 out:
 	scrub_handshake_material(session);
 	session->ep->callbacks.on_connect_fn(session, ret);
+	lodp_memwipe(&pub_key, sizeof(pub_key));
 	return (ret);
 }
 
@@ -1556,5 +1557,6 @@ on_rekey_ack_pkt(lodp_session *session, const lodp_pkt_rekey_ack *pkt)
 out:
 	scrub_handshake_material(session);
 	session->ep->callbacks.on_rekey_fn(session, ret);
+	lodp_memwipe(&pub_key, sizeof(pub_key));
 	return (ret);
 }
