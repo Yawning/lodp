@@ -41,12 +41,13 @@
 #define COOKIE_ROTATE_INTERVAL		30
 #define COOKIE_GRACE_WINDOW		30
 
-#define REKEY_BYTE_COUNT		0x40000000      /* 1 GiB */
-#define REKEY_PACKET_COUNT		0x40000000      /* 2^30 packets */
-
 typedef struct {
 	uint8_t bytes[COOKIE_LEN];
 } lodp_cookie;
+
+
+#define REKEY_BYTE_COUNT		0x40000000      /* 1 GiB */
+#define REKEY_PACKET_COUNT		0x40000000      /* 2^30 packets */
 
 
 /* Packet/session related helpers */
@@ -69,7 +70,7 @@ static inline void session_on_rekey(lodp_session *session);
 
 /* Packet type specific handler routines */
 static int on_init_pkt(lodp_endpoint *ep, const lodp_pkt_init *init_pkt,
-    const struct sockaddr *addr, socklen_t addr_len);
+    const lodp_buf *buf, const struct sockaddr *addr, socklen_t addr_len);
 static int on_handshake_pkt(lodp_endpoint *ep, lodp_session *session,
     const lodp_pkt_handshake *hs_pkt, const struct sockaddr *addr,
     socklen_t addr_len);
@@ -227,7 +228,7 @@ mac_then_decrypt_ok:
 		switch (hdr->type)
 		{
 		case PKT_INIT:
-			return (on_init_pkt(ep, (lodp_pkt_init *)hdr, addr, addr_len));
+			return (on_init_pkt(ep, (lodp_pkt_init *)hdr, buf, addr, addr_len));
 
 		case PKT_HANDSHAKE:
 			return (on_handshake_pkt(ep, session, (lodp_pkt_handshake *)hdr,
@@ -1005,16 +1006,22 @@ session_rx_seq_ok(lodp_session *session, uint32_t seq)
 	if (seq > session->rx_last_seq) {
 		diff = seq - session->rx_last_seq;
 		if (diff < sizeof(session->rx_bitmap * 8)) {
+			/* In the window */
 			session->rx_bitmap <<= diff;
 			session->rx_bitmap |= 1;
-		} else
+		} else {
+			/* To the right of window */
 			session->rx_bitmap = 1;
+		}
 		session->rx_last_seq = seq;
 	} else {
 		diff = session->rx_last_seq - seq;
+
+		/* To the left of the windw */
 		if (diff > sizeof(session->rx_bitmap) * 8)
 			return (LODP_ERR_BAD_PACKET);
 
+		/* Seen in the bitmap */
 		if (session->rx_bitmap & ((uint64_t)1 << diff))
 			return (LODP_ERR_BAD_PACKET);
 
@@ -1080,8 +1087,8 @@ session_on_rekey(lodp_session *session)
 
 
 static int
-on_init_pkt(lodp_endpoint *ep, const lodp_pkt_init *init_pkt, const struct
-    sockaddr *addr, socklen_t addr_len)
+on_init_pkt(lodp_endpoint *ep, const lodp_pkt_init *init_pkt, const lodp_buf
+    *buf, const struct sockaddr *addr, socklen_t addr_len)
 {
 	lodp_symmetric_key key;
 	int ret = 0;
@@ -1093,6 +1100,10 @@ on_init_pkt(lodp_endpoint *ep, const lodp_pkt_init *init_pkt, const struct
 	/* Validate the INIT packet */
 	if (PKT_HDR_INIT_LEN != init_pkt->hdr.length)
 		return (LODP_ERR_BAD_PACKET);
+
+	/* Defend against INIT packet replay attacks */
+	if (lodp_bf_a2(ep->init_filter, buf->ciphertext, buf->len))
+		return (LODP_ERR_DUP_INIT);
 
 	/*
 	 * TODO: Implement rate limiting here, and silently drop the packet if

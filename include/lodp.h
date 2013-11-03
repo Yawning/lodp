@@ -69,13 +69,14 @@
 #define LODP_ERR_NOT_INITIATOR		(-(LODP_ERR | 10))
 #define LODP_ERR_NOT_RESPONDER		(-(LODP_ERR | 11))
 #define LODP_ERR_DUP_IV			(-(LODP_ERR | 12))      /* Duplicate IV */
-#define LODP_ERR_INVALID_MAC		(-(LODP_ERR | 13))      /* Bad MAC on packet */
-#define LODP_ERR_BAD_PACKET		(-(LODP_ERR | 14))      /* Malformed packet */
-#define LODP_ERR_INVALID_COOKIE		(-(LODP_ERR | 15))      /* Expired cookie */
-#define LODP_ERR_DUP_COOKIE		(-(LODP_ERR | 16))      /* Reused cookie */
-#define LODP_ERR_BAD_HANDSHAKE		(-(LODP_ERR | 17))      /* Handshake failure */
-#define LODP_ERR_BAD_PUBKEY		(-(LODP_ERR | 18))      /* Bad ECDH key */
-#define LODP_ERR_MUST_REKEY		(-(LODP_ERR | 19))      /* Need to rekey */
+#define LODP_ERR_DUP_COOKIE		(-(LODP_ERR | 13))      /* Duplicate cookie */
+#define LODP_ERR_DUP_INIT		(-(LODP_ERR | 14))      /* Duplicate INIT */
+#define LODP_ERR_INVALID_MAC		(-(LODP_ERR | 15))      /* Bad MAC on packet */
+#define LODP_ERR_INVALID_COOKIE		(-(LODP_ERR | 16))      /* Expired cookie */
+#define LODP_ERR_BAD_PACKET		(-(LODP_ERR | 17))      /* Malformed packet */
+#define LODP_ERR_BAD_HANDSHAKE		(-(LODP_ERR | 18))      /* Handshake failure */
+#define LODP_ERR_BAD_PUBKEY		(-(LODP_ERR | 19))      /* Bad ECDH key */
+#define LODP_ERR_MUST_REKEY		(-(LODP_ERR | 20))      /* Need to rekey */
 
 
 /* Opaque handles for endpoints/connections */

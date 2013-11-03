@@ -59,6 +59,7 @@ struct lodp_endpoint_s {
 	lodp_mac_key		prev_cookie_key;        /* Last cookie key */
 	time_t			cookie_rotate_time;     /* Cookie rotate time */
 	time_t			cookie_expire_time;     /* Cookie expire time */
+	lodp_bf *		init_filter;            /* INIT replay */
 #ifdef TINFOIL
 	lodp_bf *		cookie_filter;          /* Cookie replay */
 	lodp_bf *		iv_filter;              /* IV replay */

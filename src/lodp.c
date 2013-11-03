@@ -114,7 +114,7 @@ lodp_endpoint_bind(void *ctxt, const lodp_callbacks *callbacks,
 	ep->use_unsafe_logging = unsafe_logging;
 	memcpy(&ep->callbacks, callbacks, sizeof(ep->callbacks));
 #ifdef TINFOIL
-	ep->iv_filter = lodp_bf_init(500000, 0.01);
+	ep->iv_filter = lodp_bf_init(500000, 0.01); /* 875175 entires */
 	if (NULL == ep->iv_filter) {
 		free_endpoint(ep);
 		return (NULL);
@@ -148,9 +148,20 @@ lodp_endpoint_bind(void *ctxt, const lodp_callbacks *callbacks,
 	lodp_rotate_cookie_key(ep);
 	memcpy(&ep->prev_cookie_key, &ep->cookie_key, sizeof(ep->prev_cookie_key));
 
+	/* Initialize the INIT replay filter */
+	ep->init_filter = lodp_bf_init(16384, 0.001); /* 18232 entries */
+	if (NULL == ep->init_filter) {
+		free_endpoint(ep);
+		return (NULL);
+	}
+
 #ifdef TINFOIL
 	/* Initialize the cookie replay filter */
-	ep->cookie_filter = lodp_bf_init(1024, 0.001);
+	ep->cookie_filter = lodp_bf_init(1024, 0.001); /* 1139 entries */
+	if (NULL == ep->cookie_filter) {
+		free_endpoint(ep);
+		return (NULL);
+	}
 #endif
 
 	lodp_log(ep, LODP_LOG_INFO, "Server Endpoint Bound", ep);
@@ -563,6 +574,8 @@ free_endpoint(lodp_endpoint *ep)
 	assert(NULL != ep);
 	assert(RB_EMPTY(&ep->sessions));
 
+	if (NULL != ep->init_filter)
+		lodp_bf_free(ep->init_filter);
 #ifdef TINFOIL
 	if (NULL != ep->iv_filter)
 		lodp_bf_free(ep->iv_filter);
