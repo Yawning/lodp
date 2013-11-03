@@ -469,7 +469,9 @@ lodp_send(lodp_session *session, const void *buf, size_t len)
 		return (LODP_ERR_INVAL);
 
 	if (STATE_REKEY == session->state)
-		return (LODP_ERR_MUST_REKEY);
+		return ((session->is_initiator) ? LODP_ERR_MUST_REKEY :
+		       LODP_ERR_AGAIN);
+
 	if (STATE_ESTABLISHED != session->state)
 		return (LODP_ERR_NOTCONN);
 
@@ -485,7 +487,7 @@ lodp_rekey(lodp_session *session)
 
 	/* LODP rekeying is always initiator driven */
 	if (!session->is_initiator) {
-		/* XXX: Allow the app to retransmit REKEY ACKs */
+		/* XXX: Allow the app to retransmit REKEY ACKs? */
 		return (LODP_ERR_NOT_INITIATOR);
 	}
 
@@ -494,13 +496,14 @@ lodp_rekey(lodp_session *session)
 		/* If this fails, try again? */
 		if (lodp_gen_keypair(&session->session_ecdh_keypair, NULL, 0))
 			return (LODP_ERR_AGAIN);
+
 		session->state = STATE_REKEY;
 	}
 
 	if (STATE_REKEY != session->state)
 		return (LODP_ERR_NOTCONN);
 
-	return lodp_send_rekey_pkt(session);
+	return (lodp_send_rekey_pkt(session));
 }
 
 

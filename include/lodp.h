@@ -86,7 +86,7 @@ typedef struct lodp_session_s		lodp_session;   /* Session */
 /* Log level passed to the logging callback */
 typedef enum {
 	LODP_LOG_ERROR, /* error condition */
-	LODP_LOG_WARN,	/* warning message */
+	LODP_LOG_WARN,  /* warning message */
 	LODP_LOG_INFO,  /* informational message */
 	LODP_LOG_DEBUG, /* debug-level messages */
 } lodp_log_level;
@@ -160,6 +160,15 @@ typedef struct {
 	 * return value of lodp_endpoint_on_packet().
 	 */
 	int (*on_recv_fn)(const lodp_session *, const void *, size_t);
+
+	/*
+	 * Rountine invoked whenever the initiator finishes rekeying a existing
+	 * connection.  This is only ever called for the initiator side since
+	 * rekeying is driven there.
+	 *
+	 * int on_rekey(const lodp_session *session, int status);
+	 */
+	void (*on_rekey_fn)(const lodp_session *, int);
 
 	/*
 	 * Routine invoked whenever a session is closed.

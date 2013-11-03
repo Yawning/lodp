@@ -41,6 +41,9 @@
 #define COOKIE_ROTATE_INTERVAL		30
 #define COOKIE_GRACE_WINDOW		30
 
+#define REKEY_BYTE_COUNT		0x40000000      /* 1 GiB */
+#define REKEY_PACKET_COUNT		0x40000000      /* 2^30 packets */
+
 typedef struct {
 	uint8_t bytes[COOKIE_LEN];
 } lodp_cookie;
@@ -61,6 +64,7 @@ static inline int session_sendto(lodp_session *session, const lodp_buf *buf);
 static inline int session_tx_seq_ok(lodp_session *session);
 static inline int session_rx_seq_ok(lodp_session *session, uint32_t seq);
 static inline int session_should_rekey(const lodp_session *session);
+static inline void session_on_rekey(lodp_session *session);
 
 
 /* Packet type specific handler routines */
@@ -111,11 +115,24 @@ lodp_on_incoming_pkt(lodp_endpoint *ep, lodp_session *session, lodp_buf *buf,
 			return (ret);
 
 		/*
+		 * If this is the responder, and we have a REKEY ACK in flight,
+		 * try the new session keys
+		 */
+		if ((!session->is_initiator) && (STATE_REKEY == session->state)) {
+			ret = mac_then_decrypt(ep, &session->rx_rekey_key, buf);
+			if (!ret) {
+				used_session_keys = 1;
+				session_on_rekey(session);
+				scrub_handshake_material(session);
+				goto mac_then_decrypt_ok;
+			} else if (LODP_ERR_INVALID_MAC != ret)
+				return (ret);
+		}
+
+		/*
 		 * Invalid MAC, this could be a retransmited HANDSHAKE packet,
 		 * so try the endpoint keys before giving up.
 		 */
-
-		/* XXX: Try the new session keys */
 	}
 	if (!ep->has_intro_keys)
 		return (LODP_ERR_NOT_RESPONDER);
@@ -239,7 +256,12 @@ lodp_send_data_pkt(lodp_session *session, const uint8_t *payload, size_t len)
 	if (PKT_DATA_LEN + len > LODP_MSS)
 		return (LODP_ERR_MSGSIZE);
 
-	if (session_should_rekey(session))
+	/*
+	 * Only check if the rekey time is up for the initiator that drives the
+	 * rekeying.  If the initiator is broken, the connection will just die
+	 * at the 2^32 - 1th DATA packet.
+	 */
+	if ((session->is_initiator) && (session_should_rekey(session)))
 		return (LODP_ERR_MUST_REKEY);
 
 	buf = lodp_buf_alloc();
@@ -409,7 +431,7 @@ lodp_send_rekey_pkt(lodp_session *session)
 
 out:
 	lodp_buf_free(buf);
-	return (ret);	
+	return (ret);
 }
 
 
@@ -891,15 +913,41 @@ session_should_rekey(const lodp_session *session)
 
 	/* TODO: Time here */
 
-	if ((session->stats.gen_tx_payload_bytes > 0x40000000) ||
-	    (session->stats.gen_rx_payload_bytes > 0x40000000))
+	if ((session->stats.gen_tx_payload_bytes > REKEY_BYTE_COUNT) ||
+	    (session->stats.gen_rx_payload_bytes > REKEY_BYTE_COUNT))
 		return (1);
 
-	if ((session->stats.gen_tx_packets > 0x40000000) ||
-	    (session->stats.gen_rx_packets > 0x400000000))
+	if ((session->stats.gen_tx_packets > REKEY_PACKET_COUNT) ||
+	    (session->stats.gen_rx_packets > REKEY_PACKET_COUNT))
 		return (1);
 
 	return (0);
+}
+
+
+static inline void
+session_on_rekey(lodp_session *session)
+{
+	assert(NULL != session);
+	assert(STATE_REKEY == session->state);
+
+	/* Reset the various bits of bookkeeping. */
+	session->tx_last_seq = 0;
+	session->rx_last_seq = 0;
+	session->rx_bitmap = 0;
+
+	session->stats.gen_id++;
+	session->stats.gen_tx_packets = 0;
+	session->stats.gen_rx_packets = 0;
+	session->stats.gen_tx_payload_bytes = 0;
+	session->stats.gen_rx_payload_bytes = 0;
+
+	/* Move the new keys over */
+	memcpy(&session->tx_key, &session->tx_rekey_key, sizeof(session->tx_key));
+	memcpy(&session->rx_key, &session->rx_rekey_key, sizeof(session->rx_key));
+
+	/* Back to the established state */
+	session->state = STATE_ESTABLISHED;
 }
 
 
@@ -1109,7 +1157,7 @@ on_handshake_pkt(lodp_endpoint *ep, lodp_session *session, const
 
 	/* Complete our side of the modified ntor handshake */
 	ret = ntor_handshake(session, &session->rx_key, &session->tx_key,
-	    &pub_key);
+		&pub_key);
 	if (ret) {
 		lodp_session_destroy(session);
 		goto out_free;
@@ -1163,7 +1211,7 @@ on_rekey_pkt(lodp_session *session, const lodp_pkt_rekey *rk_pkt)
 		return (LODP_ERR_BAD_PACKET);
 
 	if ((STATE_ESTABLISHED != session->state) && (STATE_REKEY !=
-		    session->state))
+	    session->state))
 		return (LODP_ERR_BAD_PACKET);
 
 	/* Validate the REKEY packet */
@@ -1174,8 +1222,6 @@ on_rekey_pkt(lodp_session *session, const lodp_pkt_rekey *rk_pkt)
 	ret = session_rx_seq_ok(session, ntohl(rk_pkt->sequence_number));
 	if (ret)
 		return (ret);
-
-	/* XXX: The initiator *could*  rekey immediately after connecting. */
 
 	/* XXX: Limit the rekey interval to something sane so that a
 	 * broken/malicious client can't force us to spend a stupid amount of
@@ -1191,8 +1237,8 @@ on_rekey_pkt(lodp_session *session, const lodp_pkt_rekey *rk_pkt)
 	 */
 	if (STATE_REKEY == session->state) {
 		if (lodp_memcmp(pub_key.public_key,
-			    session->remote_public_key.public_key,
-			    sizeof(session->remote_public_key.public_key))) {
+		    session->remote_public_key.public_key,
+		    sizeof(session->remote_public_key.public_key))) {
 			/*
 			 * That's odd, the peer wants to REKEY based off a
 			 * different public key, when there's a REKEY ACK in
@@ -1205,7 +1251,8 @@ on_rekey_pkt(lodp_session *session, const lodp_pkt_rekey *rk_pkt)
 
 		/* Retransmit the REKEY ACK from the cache */
 		goto do_xmit;
-	}
+	} else
+		session->state = STATE_REKEY;
 
 	/* Generate a new ephemeral ECDH keypair */
 	if (lodp_gen_keypair(&session->session_ecdh_keypair, NULL, 0)) {
@@ -1216,10 +1263,9 @@ on_rekey_pkt(lodp_session *session, const lodp_pkt_rekey *rk_pkt)
 
 	/* Ntor handshake */
 	ret = ntor_handshake(session, &session->rx_rekey_key,
-	    &session->tx_rekey_key, &pub_key);
+		&session->tx_rekey_key, &pub_key);
 	if (ret) {
 		/* Failure to rekey is fatal for the connection */
-		ret = LODP_ERR_CONNABORTED;
 		session->state = STATE_ERROR;
 		goto out;
 	}
@@ -1277,7 +1323,7 @@ on_data_pkt(lodp_session *session, const lodp_pkt_data *pkt)
 	assert(NULL != pkt);
 	assert(PKT_DATA == pkt->hdr.type);
 
-	if (session->state != STATE_ESTABLISHED)
+	if (STATE_ESTABLISHED != session->state)
 		return (LODP_ERR_BAD_PACKET);
 
 	/*
@@ -1395,7 +1441,7 @@ on_handshake_ack_pkt(lodp_session *session, const lodp_pkt_handshake_ack *pkt)
 
 	/* Complete our side of the modified ntor handshake */
 	ret = ntor_handshake(session, &session->tx_key, &session->rx_key,
-	    &pub_key);
+		&pub_key);
 	if (ret) {
 		session->state = STATE_ERROR;
 		goto out;
@@ -1447,8 +1493,8 @@ on_rekey_ack_pkt(lodp_session *session, const lodp_pkt_rekey_ack *pkt)
 	memcpy(pub_key.public_key, pkt->public_key, sizeof(pub_key.public_key));
 
 	/* Complete our side of the modified ntor handshake */
-	ret = ntor_handshake(session, &session->tx_key, &session->rx_key,
-	    &pub_key);
+	ret = ntor_handshake(session, &session->tx_rekey_key,
+		&session->rx_rekey_key, &pub_key);
 	if (ret) {
 		session->state = STATE_ERROR;
 		goto out;
@@ -1458,25 +1504,13 @@ on_rekey_ack_pkt(lodp_session *session, const lodp_pkt_rekey_ack *pkt)
 	if (lodp_memcmp(pkt->digest, session->session_secret_verifier,
 	    sizeof(pkt->digest))) {
 		session->state = STATE_ERROR;
-		ret = LODP_ERR_CONNABORTED;
+		ret = LODP_ERR_BAD_HANDSHAKE;
 		goto out;
 	}
 
-	/* Reset the various bits off book keeping */
-	session->tx_last_seq = 0;
-	session->rx_last_seq = 0;
-	session->rx_bitmap = 0;
-
-	session->stats.gen_id++;
-	session->stats.gen_tx_packets = 0;
-	session->stats.gen_rx_packets = 0;
-	session->stats.gen_tx_payload_bytes = 0;
-	session->stats.gen_rx_payload_bytes = 0;
-
-	/* Back to the established state */
-	session->state = STATE_ESTABLISHED;
+	session_on_rekey(session);
 out:
 	scrub_handshake_material(session);
-	/* XXX: Call the on rekey callback */
+	session->ep->callbacks.on_rekey_fn(session, ret);
 	return (ret);
 }

@@ -75,6 +75,7 @@ static lodp_callbacks s_test_cbs =
 	&s_on_connect_fn,
 	&s_on_accept_fn,
 	&s_on_recv_fn,
+	NULL,
 	&s_on_close_fn,
 	&pre_encrypt
 };
@@ -95,6 +96,7 @@ static void c_on_accept_fn(const lodp_endpoint *ep, lodp_session *session,
     const struct sockaddr *addr, socklen_t addr_len);
 static int c_on_recv_fn(const lodp_session *session, const void *buf, size_t
     len);
+static void c_on_rekey_fn(const lodp_session *session, int status);
 static void c_on_close_fn(const lodp_session *session);
 
 static lodp_callbacks c_test_cbs =
@@ -104,6 +106,7 @@ static lodp_callbacks c_test_cbs =
 	&c_on_connect_fn,
 	&c_on_accept_fn,
 	&c_on_recv_fn,
+	&c_on_rekey_fn,
 	&c_on_close_fn,
 	&pre_encrypt
 };
@@ -211,6 +214,20 @@ main(int argc, char *argv[])
 	assert(NULL != test_payload);
 	for (i = 0; i < len; i++) {
 		test_payload[i] = i & 0xFF;
+	}
+
+	for (i = 0; i < 10; i++) {
+		ret = lodp_send(client_session, test_payload, len);
+		if (ret) {
+			fprintf(stdout, "Send: ERROR: Failed to send to server (%d)\n",
+			    ret);
+		}
+	}
+
+	/* Try rekeying */
+	ret = lodp_rekey(client_session);
+	if (ret) {
+		fprintf(stdout, "Rekey: ERROR: Failed %d", ret);
 	}
 
 	for (i = 0; i < 10; i++) {
@@ -398,6 +415,13 @@ c_on_recv_fn(const lodp_session *session, const void *buf, size_t len)
 	}
 
 	return (0);
+}
+
+
+static void
+c_on_rekey_fn(const lodp_session *session, int status)
+{
+	fprintf(stdout, "Client: Session rekeyed (%p) %d\n", session, status);
 }
 
 
