@@ -98,14 +98,20 @@ lodp_gen_keypair(lodp_ecdh_keypair *keypair, const uint8_t *buf, size_t len)
 
 	if (NULL == buf) {
 		for (i = 0; i < 3; i++) {
+#ifdef TINFOIL
+			uint8_t tmp[LODP_ECDH_PRIVATE_KEY_LEN];
+
+			lodp_rand_bytes(tmp, sizeof(tmp));
+			ret = blake2s(keypair->private_key.private_key, tmp,
+			    NULL, LODP_ECDH_PRIVATE_KEY_LEN, sizeof(tmp), 0);
+			lodp_memwipe(tmp, sizeof(tmp));
+			if (ret)
+				goto out;
+
+#else
 			lodp_rand_bytes(keypair->private_key.private_key,
 			    LODP_ECDH_PRIVATE_KEY_LEN);
-
-			/*
-			 * XXX: Tor when doing this operation passes the random
-			 * bytes through a cryptographic hash out of distrust of
-			 * the PRNG, not sure if that's needed.
-			 */
+#endif
 
 			ret = curve25519_generate_pubkey(keypair);
 			if (ret)
@@ -335,7 +341,7 @@ lodp_memwipe(void *s, size_t n)
 {
 	volatile uint8_t *p = s;
 
-	while (--n)
+	while (n--)
 		*p++ = 0;
 
 	return (s);
