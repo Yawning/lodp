@@ -75,7 +75,6 @@ static lodp_callbacks s_test_cbs =
 	&s_on_connect_fn,
 	&s_on_accept_fn,
 	&s_on_recv_fn,
-	NULL,
 	&s_on_close_fn,
 	&pre_encrypt
 };
@@ -105,7 +104,6 @@ static lodp_callbacks c_test_cbs =
 	&c_on_connect_fn,
 	&c_on_accept_fn,
 	&c_on_recv_fn,
-	NULL,
 	&c_on_close_fn,
 	&pre_encrypt
 };

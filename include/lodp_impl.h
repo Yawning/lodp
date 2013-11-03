@@ -79,6 +79,7 @@ typedef enum {
 	STATE_INIT,             /* Initiator: INIT sent */
 	STATE_HANDSHAKE,        /* Initiator: HANDSHAKE sent */
 	STATE_ESTABLISHED,      /* Handshake completed */
+	STATE_REKEY,		/* Rekeying in progress */
 	/* XXX: Rekeying */
 	STATE_ERROR             /* TCB is fucked */
 } lodp_session_state;
@@ -104,7 +105,9 @@ struct lodp_session_s {
 	uint8_t			session_secret_verifier[LODP_MAC_DIGEST_LEN];
 	lodp_symmetric_key	tx_key;
 	lodp_symmetric_key	rx_key;
-	/* XXX: Need an additional set of keys for rekeying */
+
+	lodp_symmetric_key	tx_rekey_key;
+	lodp_symmetric_key	rx_rekey_key;
 
 	/* Replay prevention */
 	uint32_t		tx_last_seq;

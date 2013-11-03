@@ -44,10 +44,8 @@ typedef enum {
 	PKT_INIT_ACK = 2,
 	PKT_HANDSHAKE = 3,
 	PKT_HANDSHAKE_ACK = 4,
-	PKT_HEARTBEAT = 5,
-	PKT_HEARTBEAT_ACK = 6,
-	PKT_REKEY = 7,
-	PKT_REKEY_ACK = 8
+	PKT_REKEY = 5,
+	PKT_REKEY_ACK =6 
 } lodp_pkt_type;
 
 
@@ -98,15 +96,18 @@ typedef struct __attribute__ ((__packed__)) lodp_pkt_handshake_ack_s {
 	uint8_t digest[LODP_MAC_DIGEST_LEN];
 } lodp_pkt_handshake_ack;
 
-typedef struct __attribute__ ((__packed__)) lodp_pkt_heartbeat_s {
+typedef struct __attribute__ ((__packed__)) lodp_pkt_rekey_s {
 	lodp_hdr hdr;
-	uint8_t data[];
-} lodp_pkt_heartbeat;
+	uint32_t sequence_number;
+	uint8_t public_key[LODP_ECDH_PUBLIC_KEY_LEN];
+} lodp_pkt_rekey;
 
-typedef struct __attribute__ ((__packed__)) lodp_pkt_heartbeat_ack_s {
+typedef struct __attribute__ ((__packed__)) lodp_pkt_rekey_ack_s {
 	lodp_hdr hdr;
-	uint8_t data[];
-} lodp_pkt_heartbeat_ack;
+	uint32_t sequence_number;
+	uint8_t public_key[LODP_ECDH_PUBLIC_KEY_LEN];
+	uint8_t digest[LODP_MAC_DIGEST_LEN];
+} lodp_pkt_rekey_ack;
 
 
 /*
@@ -132,10 +133,10 @@ typedef struct __attribute__ ((__packed__)) lodp_pkt_heartbeat_ack_s {
 #define PKT_HDR_HANDSHAKE_LEN		(sizeof(lodp_pkt_handshake) - PKT_TAG_LEN)
 #define PKT_HANDSHAKE_ACK_LEN		sizeof(lodp_pkt_handshake_ack)
 #define PKT_HDR_HANDSHAKE_ACK_LEN	(sizeof(lodp_pkt_handshake_ack) - PKT_TAG_LEN)
-#define PKT_HEARTBEAT_LEN		sizeof(lodp_pkt_heartbeat)
-#define PKT_HDR_HEARTBEAT_LEN		(sizeof(lodp_pkt_heartbeat) - PKT_TAG_LEN)
-#define PKT_HEARTBEAT_ACK_LEN		sizeof(lodp_pkt_heartbeat_ack)
-#define PKT_HDR_HEARTBEAT_ACK_LEN	(sizeof(lodp_pkt_heartbeat_ack) - PKT_TAG_LEN)
+#define PKT_REKEY_LEN			sizeof(lodp_pkt_rekey)
+#define PKT_HDR_REKEY_LEN		(sizeof(lodp_pkt_rekey) - PKT_TAG_LEN)
+#define PKT_REKEY_ACK_LEN		sizeof(lodp_pkt_rekey_ack)
+#define PKT_HDR_REKEY_ACK_LEN		(sizeof(lodp_pkt_rekey_ack) - PKT_TAG_LEN)
 
 
 /* Cookie */
@@ -149,8 +150,7 @@ int lodp_on_incoming_pkt(lodp_endpoint *ep, lodp_session *session, lodp_buf
 int lodp_send_data_pkt(lodp_session *session, const uint8_t *buf, size_t len);
 int lodp_send_init_pkt(lodp_session *session);
 int lodp_send_handshake_pkt(lodp_session *session);
-int lodp_send_heartbeat_pkt(lodp_session *session, const uint8_t *buf, size_t
-    len);
+int lodp_send_rekey_pkt(lodp_session *session);
 
 
 #endif

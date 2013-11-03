@@ -46,12 +46,11 @@
  * and I will cackle with glee.
  */
 
+
 /*
  * Various lengths.  Needs to be kept in sync with lodp_crypto.h, but don't want
  * to expose that to the user.
  */
-
-
 #define LODP_PRIVATE_KEY_LEN	32
 #define LODP_PUBLIC_KEY_LEN	32
 
@@ -65,6 +64,7 @@
 #define LODP_ERR_NOTCONN	(-(LODP_ERR | 5))       /* Not connected */
 #define LODP_ERR_MSGSIZE	(-(LODP_ERR | 6))       /* Message too big */
 #define LODP_ERR_AFNOTSUPPORT	(-(LODP_ERR | 7))       /* Address family */
+#define LODP_ERR_CONNABORTED	(-(LODP_ERR | 8))	/* Connection aborted */
 
 #define LODP_ERR_NOT_INITIATOR	(-(LODP_ERR | 10))
 #define LODP_ERR_NOT_RESPONDER	(-(LODP_ERR | 11))
@@ -162,25 +162,6 @@ typedef struct {
 	int (*on_recv_fn)(const lodp_session *, const void *, size_t);
 
 	/*
-	 * Routine invoked whenever a heartbeat ACK arrives on a existng
-	 * connection.
-	 *
-	 * void on_heartbeat_ack(const lodp_session *session, const void *buf,
-	 *     size_t len);
-	 *
-	 * It is the application's responsibility to handle the HEARTBEAT ACK
-	 * payload, and liblodp explicitly does not check to see if the
-	 * HEARTBEAT ACK was generated in response to HEARTBEAT that it actually
-	 * sent or not (The spec suggests sending a payload that allows
-	 * verification of this in the HEARTBEAT packet).
-	 *
-	 * Note:
-	 * This function may be NULL, if HEARTBEAT packets are not used.
-	 */
-	void (*on_heartbeat_ack_fn)(const lodp_session *, const void *,
-	    size_t);
-
-	/*
 	 * Routine invoked whenever a session is closed.
 	 *
 	 * void on_close(const lodp_session *session);
@@ -212,17 +193,17 @@ typedef struct {
 
 /* Session Statistics */
 typedef struct {
-	uint64_t tx_bytes;		/* Total bytes sent */
-	uint64_t rx_bytes;		/* Total bytes received */
+	uint64_t	tx_bytes;               /* Total bytes sent */
+	uint64_t	rx_bytes;               /* Total bytes received */
 
-	uint64_t tx_payload_bytes;	/* DATA bytes sent */
-	uint64_t rx_payload_bytes;	/* DATA bytes received */
+	uint64_t	tx_payload_bytes;       /* DATA bytes sent */
+	uint64_t	rx_payload_bytes;       /* DATA bytes received */
 
-	uint32_t gen_id;		/* Generation ID (Counts rekeys) */
-	uint32_t gen_tx_packets;	/* Packets sent this generation */
-	uint32_t gen_rx_packets;	/* Packets received this generation */
-	uint32_t gen_tx_payload_bytes;	/* Bytes sent this generation */
-	uint32_t gen_rx_payload_bytes;	/* Bytes received this generation */
+	uint32_t	gen_id;                 /* Generation ID (Counts rekeys) */
+	uint32_t	gen_tx_packets;         /* Packets sent this generation */
+	uint32_t	gen_rx_packets;         /* Packets received this generation */
+	uint32_t	gen_tx_payload_bytes;   /* Bytes sent this generation */
+	uint32_t	gen_rx_payload_bytes;   /* Bytes received this generation */
 } lodp_session_stats;
 
 
@@ -250,7 +231,7 @@ int lodp_session_get_stats(const lodp_session *session, lodp_session_stats
     *stats);
 int lodp_handshake(lodp_session *session);
 int lodp_send(lodp_session *session, const void *buf, size_t len);
-int lodp_heartbeat(lodp_session *session, const void *buf, size_t len);
+int lodp_rekey(lodp_session *session);
 void lodp_close(lodp_session *session);
 
 

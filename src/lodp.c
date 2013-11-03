@@ -450,6 +450,7 @@ lodp_handshake(lodp_session *session)
 		return (lodp_send_handshake_pkt(session));
 
 	case STATE_ESTABLISHED:
+	case STATE_REKEY:
 		return (LODP_ERR_ISCONN);
 
 	default:
@@ -467,6 +468,8 @@ lodp_send(lodp_session *session, const void *buf, size_t len)
 	if ((NULL == session) || ((buf == NULL) && (0 != len)))
 		return (LODP_ERR_INVAL);
 
+	if (STATE_REKEY == session->state)
+		return (LODP_ERR_MUST_REKEY);
 	if (STATE_ESTABLISHED != session->state)
 		return (LODP_ERR_NOTCONN);
 
@@ -475,15 +478,29 @@ lodp_send(lodp_session *session, const void *buf, size_t len)
 
 
 int
-lodp_heartbeat(lodp_session *session, const void *buf, size_t len)
+lodp_rekey(lodp_session *session)
 {
-	if ((NULL == session) || ((buf == NULL) && (0 != len)))
+	if (NULL == session)
 		return (LODP_ERR_INVAL);
 
-	if (STATE_ESTABLISHED != session->state)
+	/* LODP rekeying is always initiator driven */
+	if (!session->is_initiator) {
+		/* XXX: Allow the app to retransmit REKEY ACKs */
+		return (LODP_ERR_NOT_INITIATOR);
+	}
+
+	/* Generate the new curve25519 keypair */
+	if (STATE_ESTABLISHED == session->state) {
+		/* If this fails, try again? */
+		if (lodp_gen_keypair(&session->session_ecdh_keypair, NULL, 0))
+			return (LODP_ERR_AGAIN);
+		session->state = STATE_REKEY;
+	}
+
+	if (STATE_REKEY != session->state)
 		return (LODP_ERR_NOTCONN);
 
-	return (lodp_send_heartbeat_pkt(session, buf, len));
+	return lodp_send_rekey_pkt(session);
 }
 
 
