@@ -155,7 +155,7 @@ lodp_ecdh_validate_pubkey(const lodp_ecdh_public_key *pub_key)
 	 * if the point at infinity is selected as the public key.
 	 */
 
-	if (!lodp_memcmp(pub_key->public_key, infpoint, LODP_ECDH_PUBLIC_KEY_LEN))
+	if (!lodp_memeq(pub_key->public_key, infpoint, LODP_ECDH_PUBLIC_KEY_LEN))
 		return (LODP_ERR_BAD_PUBKEY);
 
 	return (0);
@@ -343,7 +343,7 @@ lodp_memwipe(void *s, size_t n)
 
 
 int
-lodp_memcmp(const void *s1, const void *s2, size_t n)
+lodp_memeq(const void *s1, const void *s2, size_t n)
 {
 	const uint8_t *a = s1;
 	const uint8_t *b = s2;

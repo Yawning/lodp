@@ -522,7 +522,7 @@ mac_then_decrypt(const lodp_endpoint *ep, lodp_symmetric_key *keys, lodp_buf
 	if (ret)
 		return (ret);
 
-	if (lodp_memcmp(digest, ct_hdr->mac, sizeof(digest)))
+	if (lodp_memeq(digest, ct_hdr->mac, sizeof(digest)))
 		return (LODP_ERR_INVALID_MAC);
 
 #ifdef TINFOIL
@@ -1030,7 +1030,7 @@ on_handshake_pkt(lodp_endpoint *ep, lodp_session *session, const
 		addr_len);
 	if (ret)
 		goto out;
-	if (lodp_memcmp(cookie.bytes, hs_pkt->cookie, COOKIE_LEN)) {
+	if (lodp_memeq(cookie.bytes, hs_pkt->cookie, COOKIE_LEN)) {
 		/* If not match, check the previous cookie if not stale */
 		if (now > ep->cookie_expire_time) {
 			ret = LODP_ERR_INVALID_COOKIE;
@@ -1040,7 +1040,7 @@ on_handshake_pkt(lodp_endpoint *ep, lodp_session *session, const
 			addr, addr_len);
 		if (ret)
 			goto out;
-		if (lodp_memcmp(cookie.bytes, hs_pkt->cookie, COOKIE_LEN)) {
+		if (lodp_memeq(cookie.bytes, hs_pkt->cookie, COOKIE_LEN)) {
 			ret = LODP_ERR_INVALID_COOKIE;
 			goto out;
 		}
@@ -1236,7 +1236,7 @@ on_rekey_pkt(lodp_session *session, const lodp_pkt_rekey *rk_pkt)
 	 * REKEY ACK being lost.
 	 */
 	if (STATE_REKEY == session->state) {
-		if (lodp_memcmp(pub_key.public_key,
+		if (lodp_memeq(pub_key.public_key,
 		    session->remote_public_key.public_key,
 		    sizeof(session->remote_public_key.public_key))) {
 			/*
@@ -1448,7 +1448,7 @@ on_handshake_ack_pkt(lodp_session *session, const lodp_pkt_handshake_ack *pkt)
 	}
 
 	/* Confirm that the correct shared secret was derived */
-	if (lodp_memcmp(pkt->digest, session->session_secret_verifier,
+	if (lodp_memeq(pkt->digest, session->session_secret_verifier,
 	    sizeof(pkt->digest))) {
 		session->state = STATE_ERROR;
 		ret = LODP_ERR_BAD_HANDSHAKE;
@@ -1501,7 +1501,7 @@ on_rekey_ack_pkt(lodp_session *session, const lodp_pkt_rekey_ack *pkt)
 	}
 
 	/* Confirm that the correct shared secret was derived */
-	if (lodp_memcmp(pkt->digest, session->session_secret_verifier,
+	if (lodp_memeq(pkt->digest, session->session_secret_verifier,
 	    sizeof(pkt->digest))) {
 		session->state = STATE_ERROR;
 		ret = LODP_ERR_BAD_HANDSHAKE;

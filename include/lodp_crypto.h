@@ -120,7 +120,7 @@ typedef struct {
 uint64_t lodp_hash(const void *buf, size_t len);
 void lodp_rand_bytes(void *s, size_t n);
 void *lodp_memwipe(void *s, size_t n);
-int lodp_memcmp(const void *s1, const void *s2, size_t n);
+int lodp_memeq(const void *s1, const void *s2, size_t n);
 
 
 #endif
