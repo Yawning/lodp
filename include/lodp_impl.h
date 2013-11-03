@@ -60,8 +60,8 @@ struct lodp_endpoint_s {
 	time_t			cookie_rotate_time;     /* Cookie rotate time */
 	time_t			cookie_expire_time;     /* Cookie expire time */
 #ifdef TINFOIL
-	lodp_bf *		cookie_filter;		/* Cookie replay */
-	lodp_bf *		iv_filter;		/* IV replay */
+	lodp_bf *		cookie_filter;          /* Cookie replay */
+	lodp_bf *		iv_filter;              /* IV replay */
 #endif
 
 	/* Endpoint configuration */
@@ -79,8 +79,7 @@ typedef enum {
 	STATE_INIT,             /* Initiator: INIT sent */
 	STATE_HANDSHAKE,        /* Initiator: HANDSHAKE sent */
 	STATE_ESTABLISHED,      /* Handshake completed */
-	STATE_REKEY,		/* Rekeying in progress */
-	/* XXX: Rekeying */
+	STATE_REKEY,            /* Rekeying in progress */
 	STATE_ERROR             /* TCB is fucked */
 } lodp_session_state;
 
@@ -145,8 +144,8 @@ void lodp_session_destroy(lodp_session *session);
  * since I require the user to copy the data out in each callback.  Either relax
  * this restriction or actually only allocate 2.
  */
-#define BUFPOOL_INCR	64			/* Buffer pool base/increase */
-#define LODP_MSS	(1280 - 8 - 40)		/* IPv6 MSS - UDP header */
+#define BUFPOOL_INCR	64                      /* Buffer pool base/increase */
+#define LODP_MSS	(1280 - 8 - 40)         /* IPv6 MSS - UDP header */
 
 
 typedef struct lodp_buf_s {

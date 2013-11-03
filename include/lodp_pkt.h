@@ -45,7 +45,7 @@ typedef enum {
 	PKT_HANDSHAKE = 3,
 	PKT_HANDSHAKE_ACK = 4,
 	PKT_REKEY = 5,
-	PKT_REKEY_ACK =6 
+	PKT_REKEY_ACK = 6
 } lodp_pkt_type;
 
 

@@ -56,26 +56,26 @@
 
 
 /* Error codes */
-#define LODP_ERR		0x00100000
-#define LODP_ERR_INVAL		(-(LODP_ERR | 1))       /* Invalid arguments */
-#define LODP_ERR_NOBUFS		(-(LODP_ERR | 2))       /* Out of memory */
-#define LODP_ERR_AGAIN		(-(LODP_ERR | 3))       /* Would block */
-#define LODP_ERR_ISCONN		(-(LODP_ERR | 4))       /* Already connected */
-#define LODP_ERR_NOTCONN	(-(LODP_ERR | 5))       /* Not connected */
-#define LODP_ERR_MSGSIZE	(-(LODP_ERR | 6))       /* Message too big */
-#define LODP_ERR_AFNOTSUPPORT	(-(LODP_ERR | 7))       /* Address family */
-#define LODP_ERR_CONNABORTED	(-(LODP_ERR | 8))	/* Connection aborted */
+#define LODP_ERR			0x00100000
+#define LODP_ERR_INVAL			(-(LODP_ERR | 1))       /* Invalid arguments */
+#define LODP_ERR_NOBUFS			(-(LODP_ERR | 2))       /* Out of memory */
+#define LODP_ERR_AGAIN			(-(LODP_ERR | 3))       /* Would block */
+#define LODP_ERR_ISCONN			(-(LODP_ERR | 4))       /* Already connected */
+#define LODP_ERR_NOTCONN		(-(LODP_ERR | 5))       /* Not connected */
+#define LODP_ERR_MSGSIZE		(-(LODP_ERR | 6))       /* Message too big */
+#define LODP_ERR_AFNOTSUPPORT		(-(LODP_ERR | 7))       /* Address family */
+#define LODP_ERR_CONNABORTED		(-(LODP_ERR | 8))       /* Connection aborted */
 
-#define LODP_ERR_NOT_INITIATOR	(-(LODP_ERR | 10))
-#define LODP_ERR_NOT_RESPONDER	(-(LODP_ERR | 11))
-#define LODP_ERR_DUP_IV		(-(LODP_ERR | 12))	/* Duplicate IV */
-#define LODP_ERR_INVALID_MAC	(-(LODP_ERR | 13))      /* Bad MAC on packet */
-#define LODP_ERR_BAD_PACKET	(-(LODP_ERR | 14))      /* Malformed packet */
-#define LODP_ERR_INVALID_COOKIE	(-(LODP_ERR | 15))      /* Expired cookie */
-#define LODP_ERR_DUP_COOKIE	(-(LODP_ERR | 16))	/* Reused cookie */
-#define LODP_ERR_BAD_HANDSHAKE	(-(LODP_ERR | 17))      /* Handshake failure */
-#define LODP_ERR_BAD_PUBKEY	(-(LODP_ERR | 18))      /* Bad ECDH key */
-#define LODP_ERR_MUST_REKEY	(-(LODP_ERR | 19))	/* Need to rekey */
+#define LODP_ERR_NOT_INITIATOR		(-(LODP_ERR | 10))
+#define LODP_ERR_NOT_RESPONDER		(-(LODP_ERR | 11))
+#define LODP_ERR_DUP_IV			(-(LODP_ERR | 12))      /* Duplicate IV */
+#define LODP_ERR_INVALID_MAC		(-(LODP_ERR | 13))      /* Bad MAC on packet */
+#define LODP_ERR_BAD_PACKET		(-(LODP_ERR | 14))      /* Malformed packet */
+#define LODP_ERR_INVALID_COOKIE		(-(LODP_ERR | 15))      /* Expired cookie */
+#define LODP_ERR_DUP_COOKIE		(-(LODP_ERR | 16))      /* Reused cookie */
+#define LODP_ERR_BAD_HANDSHAKE		(-(LODP_ERR | 17))      /* Handshake failure */
+#define LODP_ERR_BAD_PUBKEY		(-(LODP_ERR | 18))      /* Bad ECDH key */
+#define LODP_ERR_MUST_REKEY		(-(LODP_ERR | 19))      /* Need to rekey */
 
 
 /* Opaque handles for endpoints/connections */
@@ -204,7 +204,6 @@ typedef struct {
 typedef struct {
 	uint64_t	tx_bytes;               /* Total bytes sent */
 	uint64_t	rx_bytes;               /* Total bytes received */
-
 	uint64_t	tx_payload_bytes;       /* DATA bytes sent */
 	uint64_t	rx_payload_bytes;       /* DATA bytes received */
 
