@@ -112,6 +112,7 @@ lodp_endpoint_bind(void *ctxt, const lodp_callbacks *callbacks,
 
 	ep->ctxt = ctxt;
 	ep->use_unsafe_logging = unsafe_logging;
+	ep->log_level = LODP_LOG_WARN;
 	memcpy(&ep->callbacks, callbacks, sizeof(ep->callbacks));
 #ifdef TINFOIL
 	ep->iv_filter = lodp_bf_init(23, 0.01); /* 875175 entries */
@@ -188,6 +189,17 @@ lodp_endpoint_get_context(const lodp_endpoint *ep, void **ctxt)
 		return (LODP_ERR_INVAL);
 
 	*ctxt = ep->ctxt;
+	return (0);
+}
+
+
+int
+lodp_endpoint_set_log_level(lodp_endpoint *ep, lodp_log_level level)
+{
+	if (NULL == ep)
+		return (LODP_ERR_INVAL);
+
+	ep->log_level = level;
 	return (0);
 }
 

@@ -69,6 +69,7 @@ struct lodp_endpoint_s {
 	/* Endpoint configuration */
 	int			has_intro_keys;
 	int			use_unsafe_logging;
+	lodp_log_level		log_level;
 
 	/* Connection table */
 	RB_HEAD(lodp_ep_sessions, lodp_session_s) sessions;

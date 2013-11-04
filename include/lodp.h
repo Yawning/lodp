@@ -87,10 +87,10 @@ typedef struct lodp_session_s		lodp_session;   /* Session */
 
 /* Log level passed to the logging callback */
 typedef enum {
-	LODP_LOG_ERROR, /* error condition */
-	LODP_LOG_WARN,  /* warning message */
-	LODP_LOG_INFO,  /* informational message */
-	LODP_LOG_DEBUG, /* debug-level messages */
+	LODP_LOG_ERROR = 0,	/* error condition */
+	LODP_LOG_WARN,		/* warning message */
+	LODP_LOG_INFO,		/* informational message */
+	LODP_LOG_DEBUG,		/* debug-level messages */
 } lodp_log_level;
 
 
@@ -236,6 +236,7 @@ lodp_endpoint *lodp_endpoint_bind(void *ctxt, const lodp_callbacks
     *callbacks, const uint8_t *priv_key, size_t priv_key_len, int unsafe_logging);
 int lodp_endpoint_set_context(lodp_endpoint *ep, void *ctxt);
 int lodp_endpoint_get_context(const lodp_endpoint *ep, void **ctxt);
+int lodp_endpoint_set_log_level(lodp_endpoint *ep, lodp_log_level level);
 int lodp_endpoint_get_stats(const lodp_endpoint *ep, lodp_endpoint_stats
     *stats);
 ssize_t lodp_endpoint_get_mss(const lodp_endpoint *ep);

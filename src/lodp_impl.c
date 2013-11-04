@@ -178,7 +178,7 @@ lodp_log(const lodp_endpoint *ep, lodp_log_level level, const char *fmt, ...)
 	va_list args;
 	int ret;
 
-	if (NULL == ep->callbacks.log_fn)
+	if ((NULL == ep->callbacks.log_fn) || (level > ep->log_level))
 		return;
 
 	/*
@@ -206,7 +206,8 @@ lodp_session_log(const lodp_session *session, lodp_log_level level, const char
 	va_list args;
 	int ret;
 
-	if (NULL == session->ep->callbacks.log_fn)
+	if ((NULL == session->ep->callbacks.log_fn) || (level >
+		    session->ep->log_level))
 		return;
 
 	/*

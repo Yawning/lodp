@@ -164,6 +164,7 @@ main(int argc, char *argv[])
 		fprintf(stderr, "ERROR: Failed to initialize server endpoint\n");
 		goto out;
 	}
+	lodp_endpoint_set_log_level(server_ep, LODP_LOG_DEBUG);
 
 	/* Set up the client endpoint */
 	client_ep = lodp_endpoint_bind(NULL, &c_test_cbs, NULL, 0, 1);
@@ -171,6 +172,7 @@ main(int argc, char *argv[])
 		fprintf(stderr, "ERROR: Failed to initialize client endpoint\n");
 		goto out_serv;
 	}
+	lodp_endpoint_set_log_level(client_ep, LODP_LOG_DEBUG);
 
 	/*
 	 * Connect (Client->Server)
