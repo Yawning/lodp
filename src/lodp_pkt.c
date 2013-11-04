@@ -48,6 +48,7 @@ typedef struct {
 
 #define REKEY_TIME_MIN		5                       /* 5 sec */
 #define REKEY_PACKET_COUNT	0x80000000              /* 2^31 packets */
+#define REKEY_PACKET_RESP_COUNT	0xfffffbff              /* 2^32 - 1 - 1024 packets */
 
 
 /* Packet/session related helpers */
@@ -257,12 +258,8 @@ lodp_send_data_pkt(lodp_session *session, const uint8_t *payload, size_t len)
 	if (PKT_DATA_LEN + len > LODP_MSS)
 		return (LODP_ERR_MSGSIZE);
 
-	/*
-	 * Only check if the rekey time is up for the initiator that drives the
-	 * rekeying.  If the initiator is broken, the connection will just die
-	 * at the 2^32 - 1th DATA packet.
-	 */
-	if ((session->is_initiator) && (session_should_rekey(session)))
+	/* Check to see if we should be rekeying instead */
+	if (session_should_rekey(session))
 		return (LODP_ERR_MUST_REKEY);
 
 	buf = lodp_buf_alloc();
@@ -1035,10 +1032,21 @@ session_should_rekey(const lodp_session *session)
 	if (STATE_ESTABLISHED != session->state)
 		return (0);
 
-	/* 2^30 packets have been transmitted in either direction. */
-	if ((session->stats.gen_tx_packets > REKEY_PACKET_COUNT) ||
-	    (session->stats.gen_rx_packets > REKEY_PACKET_COUNT))
-		return (1);
+	if (!session->is_initiator) {
+		/*
+		 * Allow sending as much as we want, but hold 1024 packets in
+		 * reserve to have enough sequence number space to send REKEY
+		 * ACKs (Clients really should have REKEYed way way way before
+		 * this point though.
+		 */
+		if (session->stats.gen_tx_packets > REKEY_PACKET_RESP_COUNT)
+			return (1);
+	} else {
+		/* Rekey whenever we send or receive enough packets */
+		if ((session->stats.gen_tx_packets > REKEY_PACKET_COUNT) ||
+		    (session->stats.gen_rx_packets > REKEY_PACKET_COUNT))
+			return (1);
+	}
 
 	return (0);
 }
