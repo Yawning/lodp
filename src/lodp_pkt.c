@@ -58,7 +58,7 @@ typedef struct {
 
 /* Packet/session related helpers */
 static int encrypt_then_mac(lodp_endpoint *ep, lodp_session *session,
-    const lodp_symmetric_key *keys, lodp_buf *buf);
+    const lodp_symmetric_key *keys, lodp_buf *buf, uint16_t pad_clamp);
 static int mac_then_decrypt(const lodp_endpoint *ep, const lodp_symmetric_key
     *keys, lodp_buf *buf);
 static int generate_cookie(lodp_cookie *cookie, int prev_key, lodp_endpoint *ep,
@@ -288,7 +288,7 @@ lodp_send_data_pkt(lodp_session *session, const uint8_t *payload, size_t len)
 	session->stats.gen_tx_packets++;
 	session->stats.tx_payload_bytes += len;
 
-	ret = encrypt_then_mac(session->ep, session, &session->tx_key, buf);
+	ret = encrypt_then_mac(session->ep, session, &session->tx_key, buf, 0);
 	if (ret)
 		goto out;
 	ret = session_sendto(session, buf);
@@ -326,7 +326,7 @@ lodp_send_init_pkt(lodp_session *session)
 	memcpy(pkt->intro_bulk_key, session->rx_key.bulk_key.bulk_key,
 	    sizeof(pkt->intro_bulk_key));
 
-	ret = encrypt_then_mac(session->ep, session, &session->tx_key, buf);
+	ret = encrypt_then_mac(session->ep, session, &session->tx_key, buf, 0);
 	if (ret)
 		goto out;
 	ret = session_sendto(session, buf);
@@ -367,7 +367,39 @@ lodp_send_init_ack_pkt(lodp_endpoint *ep, const lodp_pkt_init *init_pkt, const
 	if (ret)
 		goto out;
 
-	ret = encrypt_then_mac(ep, NULL, key, buf);
+	/*
+	 * Limit the gains to be had by trying to use INIT packets with a
+	 * spoofed return address to mount an amplification attack.
+	 *
+	 * TODO:
+	 * Investigate if it's acceptable to clamp the size of the INIT ACK to
+	 * the INIT that triggered it's transmission.  Assuming someone sends a
+	 * INIT with 0 padding, the INIT ACKS generated would range from 92 to
+	 * 124 bytes in size, which is probably too small.  Not even sure a 192
+	 * byte range is acceptable with the current model.
+	 *
+	 * These are the relevant packet sizes and various tradeoffs:
+	 *  INIT (0 padding) -> 124 bytes
+	 *  INIT ACK (0 padding) -> 92 bytes
+	 *  LODP_MSS -> 1280 bytes
+	 *
+	 * No clamp:
+	 *  * 9.94:1 worst case amplification factor
+	 *  * 92 <-> 1280 byte INIT ACKs
+	 *
+	 * Clamp to INIT size:
+	 *  * 1:1 amplification factor
+	 *  * 92 <-> 124 - 1280 byte INIT ACKs
+	 *  Is the response is always smaller than the request a tell to DPI
+	 *  boxes?
+	 *
+	 * Clamp to arbitrary limit (CURRENT IMPLEMENTATION):
+	 *  * 2.55:1 worst case amplification factor
+	 *  * 92 <-> 316 byte  INIT ACKs
+	 */
+
+	ret = encrypt_then_mac(ep, NULL, key, buf, PKT_INIT_ACK_LEN +
+	    PKT_COOKIE_LEN_MAX);
 	if (ret)
 		goto out;
 	ep->stats.tx_bytes += buf->len;
@@ -426,7 +458,7 @@ lodp_send_handshake_pkt(lodp_session *session)
 	    sizeof(pkt->public_key));
 	memcpy(pkt->cookie, session->cookie, session->cookie_len);
 
-	ret = encrypt_then_mac(session->ep, session, &session->tx_key, buf);
+	ret = encrypt_then_mac(session->ep, session, &session->tx_key, buf, 0);
 	if (ret)
 		goto out;
 	ret = session_sendto(session, buf);
@@ -473,7 +505,7 @@ lodp_send_handshake_ack_pkt(lodp_session *session, const lodp_symmetric_key
 	memcpy(pkt->digest, session->session_secret_verifier,
 	    LODP_MAC_DIGEST_LEN);
 
-	ret = encrypt_then_mac(session->ep, NULL, key, buf);
+	ret = encrypt_then_mac(session->ep, NULL, key, buf, 0);
 	if (ret)
 		goto out;
 	ret = session_sendto(session, buf);
@@ -515,7 +547,7 @@ lodp_send_rekey_pkt(lodp_session *session)
 	if (ret)
 		goto out;
 
-	ret = encrypt_then_mac(session->ep, session, &session->tx_key, buf);
+	ret = encrypt_then_mac(session->ep, session, &session->tx_key, buf, 0);
 	if (ret)
 		goto out;
 	ret = session_sendto(session, buf);
@@ -559,7 +591,7 @@ lodp_send_rekey_ack_pkt(lodp_session *session)
 	if (ret)
 		goto out;
 
-	ret = encrypt_then_mac(session->ep, session, &session->tx_key, buf);
+	ret = encrypt_then_mac(session->ep, session, &session->tx_key, buf, 0);
 	if (ret)
 		goto out;
 	ret = session_sendto(session, buf);
@@ -588,7 +620,7 @@ lodp_rotate_cookie_key(lodp_endpoint *ep)
 
 static int
 encrypt_then_mac(lodp_endpoint *ep, lodp_session *session, const lodp_symmetric_key
-    *keys, lodp_buf *buf)
+    *keys, lodp_buf *buf, uint16_t pad_clamp)
 {
 	lodp_hdr *pt_hdr, *ct_hdr;
 	int ret;
@@ -608,13 +640,16 @@ encrypt_then_mac(lodp_endpoint *ep, lodp_session *session, const lodp_symmetric_
 	 */
 
 	if (NULL != ep->callbacks.pre_encrypt_fn) {
+		if ((0 == pad_clamp) || (pad_clamp > LODP_MSS))
+			pad_clamp = LODP_MSS;
+
 		ret = ep->callbacks.pre_encrypt_fn(ep, session, buf->len,
-			LODP_MSS);
+			pad_clamp);
 		if (ret > 0) {
 			lodp_log(ep, LODP_LOG_DEBUG, "%d bytes of padding, %d",
 			    ret, buf->len);
-			if (ret + buf->len > LODP_MSS)
-				ret = LODP_MSS - buf->len;
+			if (ret + buf->len > pad_clamp)
+				ret = pad_clamp - buf->len;
 			lodp_rand_bytes(((void *)pt_hdr) + buf->len, ret);
 			buf->len += ret;
 		}

@@ -191,11 +191,12 @@ typedef struct {
 	 *
 	 * int pre_encrypt(const lodp_endpoint *endpoint,
 	 *     const lodp_session *session,  size_t current_length,
-	 *     size_t mss);
+	 *     size_t max_allowed);
 	 *
 	 * Return the size of the random padding to be appended in bytes.  If
 	 * the amount of padding requested is too large, then it will be shrunk
-	 * down to the MSS (current_length + ret <= mss).
+	 * down to the value specified in max_allowed (current_length + ret <=
+	 * max_allowed).
 	 */
 	int (*pre_encrypt_fn)(const lodp_endpoint *, const lodp_session *,
 	    size_t, size_t);
