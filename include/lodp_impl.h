@@ -49,6 +49,7 @@
 struct lodp_endpoint_s {
 	void *			ctxt;           /* User opaque handle */
 	lodp_callbacks		callbacks;      /* User callbacks */
+	lodp_endpoint_stats	stats;
 
 	/* Keys used for session initialization */
 	lodp_ecdh_keypair	intro_ecdh_keypair;

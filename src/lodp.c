@@ -192,6 +192,18 @@ lodp_endpoint_get_context(const lodp_endpoint *ep, void **ctxt)
 }
 
 
+int
+lodp_endpoint_get_stats(const lodp_endpoint *ep, lodp_endpoint_stats *stats)
+{
+	if ((NULL == ep) || (NULL == stats))
+		return (LODP_ERR_INVAL);
+
+	memcpy(stats, &ep->stats, sizeof(*ep));
+
+	return (0);
+}
+
+
 ssize_t
 lodp_endpoint_get_mss(const lodp_endpoint *ep)
 {
@@ -263,6 +275,8 @@ lodp_endpoint_on_packet(lodp_endpoint *ep, const uint8_t *buf, size_t len,
 
 	if ((NULL == ep) || (NULL == buf) || (NULL == addr))
 		return (LODP_ERR_INVAL);
+
+	ep->stats.rx_bytes += len;
 
 	/*
 	 * Validate the packet size, and ignore under/oversized packets.

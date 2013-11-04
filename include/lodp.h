@@ -202,6 +202,15 @@ typedef struct {
 } lodp_callbacks;
 
 
+/* Endpoint Statistics */
+typedef struct {
+	uint64_t	tx_bytes;               /* Total bytes sent */
+	uint64_t	rx_bytes;               /* Total bytes received */
+
+	/* TODO: Add various protocol related stats */
+} lodp_endpoint_stats;
+
+
 /* Session Statistics */
 typedef struct {
 	uint64_t	tx_bytes;               /* Total bytes sent */
@@ -226,6 +235,8 @@ lodp_endpoint *lodp_endpoint_bind(void *ctxt, const lodp_callbacks
     *callbacks, const uint8_t *priv_key, size_t priv_key_len, int unsafe_logging);
 int lodp_endpoint_set_context(lodp_endpoint *ep, void *ctxt);
 int lodp_endpoint_get_context(const lodp_endpoint *ep, void **ctxt);
+int lodp_endpoint_get_stats(const lodp_endpoint *ep, lodp_endpoint_stats
+    *stats);
 ssize_t lodp_endpoint_get_mss(const lodp_endpoint *ep);
 void lodp_endpoint_unbind(lodp_endpoint *ep);
 int lodp_endpoint_on_packet(lodp_endpoint *ep, const uint8_t *buf, size_t len,

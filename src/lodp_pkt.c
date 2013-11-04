@@ -51,6 +51,11 @@ typedef struct {
 #define REKEY_PACKET_RESP_COUNT	0xfffffbff              /* 2^32 - 1 - 1024 packets */
 
 
+#if (COOKIE_LEN > PKT_COOKIE_LEN_MAX)
+#error Expecting cookies that we create to be shorter than the length.
+#endif
+
+
 /* Packet/session related helpers */
 static int encrypt_then_mac(lodp_endpoint *ep, lodp_session *session,
     const lodp_symmetric_key *keys, lodp_buf *buf);
@@ -365,6 +370,7 @@ lodp_send_init_ack_pkt(lodp_endpoint *ep, const lodp_pkt_init *init_pkt, const
 	ret = encrypt_then_mac(ep, NULL, key, buf);
 	if (ret)
 		goto out;
+	ep->stats.tx_bytes += buf->len;
 	ret = ep->callbacks.sendto_fn(ep, buf->ciphertext, buf->len, addr,
 		addr_len);
 out:
@@ -945,6 +951,7 @@ session_sendto(lodp_session *session, const lodp_buf *buf)
 	assert(NULL != session);
 	assert(NULL != buf);
 
+	session->ep->stats.tx_bytes += buf->len;
 	session->stats.tx_bytes += buf->len;
 
 	ret = session->ep->callbacks.sendto_fn(session->ep, buf->ciphertext,
