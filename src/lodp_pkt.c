@@ -1367,7 +1367,8 @@ on_data_pkt(lodp_session *session, const lodp_pkt_data *pkt)
 	assert(NULL != pkt);
 	assert(PKT_DATA == pkt->hdr.type);
 
-	if (STATE_ESTABLISHED != session->state)
+	if ((STATE_ESTABLISHED != session->state) && (STATE_REKEY !=
+		    session->state))
 		return (LODP_ERR_BAD_PACKET);
 
 	/*
