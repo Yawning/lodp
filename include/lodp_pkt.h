@@ -123,6 +123,8 @@ typedef struct __attribute__ ((__packed__)) {
 #define PKT_TLV_LEN			4
 #define PKT_HDR_LEN			sizeof(lodp_hdr)
 
+#define PKT_COOKIE_LEN_MAX		256
+
 #define PKT_DATA_LEN			sizeof(lodp_pkt_data)
 #define PKT_HDR_DATA_LEN		(sizeof(lodp_pkt_data) - PKT_TAG_LEN)
 #define PKT_INIT_LEN			sizeof(lodp_pkt_init)

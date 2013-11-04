@@ -1449,7 +1449,7 @@ on_init_ack_pkt(lodp_session *session, const lodp_pkt_init_ack *pkt)
 	 */
 
 	cookie_len = pkt->hdr.length - PKT_HDR_INIT_ACK_LEN;
-	if (cookie_len == 0)
+	if ((0 == cookie_len) || (cookie_len > PKT_COOKIE_LEN_MAX))
 		return (LODP_ERR_BAD_PACKET);
 
 	cookie = calloc(1, cookie_len);
