@@ -44,24 +44,29 @@
  *
  * It requires that the lodp_crypto module has been initialized before it will
  * work as it uses liblodp's SipHash implementation to generate hashes, however
- * removing this dependency is trivial (Edit lodp_bf.c:get_hashes().
+ * removing this dependency is trivial (Edit lodp_bf.c:get_hashes()).
  *
- * Note that lodp_bf_init() assumes the user has a rough idea of how much memory
- * a filter with n entries at a p false positive rate will comsume as it does
- * nothing to prevent the allocation of gigantic filters.
+ * Creation is done based on the desired false positive rate and the amount of
+ * memory consumed (backing store sizes are powers of 2).  Due to the buffering
+ * strategy, the actual memory consumed is double that of what is specified at
+ * creation time as 2 bloom filters of size 2 ^ m_ln2 are used.
  *
  * lodp_bf_a2(): Test-And-Set
- * lodp_bf_a2_test: Test
+ * lodp_bf_a2_test: Test (Will move the entry to the active filter on an active
+ *   2 cache hit, but will not add the entry to the filter on a miss)
  */
 
 
 typedef struct lodp_bf_s   lodp_bf;
 
 
-lodp_bf *lodp_bf_init(size_t n, double p);
+lodp_bf *lodp_bf_init(size_t m_ln2, double p);
 int lodp_bf_a2(lodp_bf *bf, const void *buf, size_t len);
 int lodp_bf_a2_test(lodp_bf *bf, const void *buf, size_t len);
 void lodp_bf_free(lodp_bf *bf);
+
+
+ssize_t lodp_bf_calc(size_t m_ln2, size_t n, double p);
 
 
 #endif

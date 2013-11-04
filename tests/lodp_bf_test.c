@@ -53,7 +53,7 @@ main(int argc, char *argv[])
 
 	lodp_crypto_init();
 
-	bf = lodp_bf_init(20000, 0.001);
+	bf = lodp_bf_init(19, 0.001);
 	if (NULL == bf)
 		goto out;
 

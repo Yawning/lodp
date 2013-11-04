@@ -38,7 +38,6 @@
 #include "lodp_bf.h"
 
 
-static inline int next_power_2(uint32_t value);
 static inline void get_hashes(uint32_t *hashes, const void *buf, size_t len, int
     k);
 static inline int in_cache(const uint8_t *cache, const uint32_t *hashes, int k,
@@ -60,37 +59,31 @@ struct lodp_bf_s {
 
 
 lodp_bf *
-lodp_bf_init(size_t n, double p)
+lodp_bf_init(size_t m_ln2, double p)
 {
 	static const double ln_2 = 0.69314718055994529;
-	static const double ln_2_sq = 0.48045301391820139;
 	lodp_bf *bf;
 	int k;
+	ssize_t n;
 	double m;
-	double nn;
-	double ln_p;
+
+	n = lodp_bf_calc(m_ln2, 0, p);
+	if (n < 0)
+		return (NULL);
 
 	bf = calloc(sizeof(*bf), 1);
 	if (NULL == bf)
 		return (NULL);
 
-	/*
-	 * From https://en.wikipedia.org/wiki/Bloom_filter:
-	 *  m = - n * ln(p) / (ln(2) ^ 2)
-	 *  n = - m * (ln(2) ^ 2) / ln(p)
-	 *  k = m/n * ln(2)
-	 */
+	m = lodp_bf_calc(0, n, p);
 
-	ln_p = log(p);	/* Need libm just for this call. :( */
-	m = -1.0d * n * ln_p / ln_2_sq;
-	m = 1 << next_power_2((uint32_t)m);
-	nn = -1.0d * m * ln_2_sq / ln_p;
-	k = (int)((m * ln_2 / nn) + 0.5);
+	m = 1 << m_ln2;
+	k = (int)((m * ln_2 / n) + 0.5); /*  k = m/n * ln(2) */
 
 	bf->k = (k > 2) ? k : 2; /* Minimum of 2 hashes */
 	bf->mask = (int)m - 1;
 	bf->cache_len = (int)m >> 3;
-	bf->nr_a1_entries_max = nn;
+	bf->nr_a1_entries_max = (int)n;
 	bf->active_1 = calloc(bf->cache_len, 1);
 	bf->active_2 = calloc(bf->cache_len, 1);
 
@@ -174,15 +167,43 @@ lodp_bf_free(lodp_bf *bf)
 }
 
 
-static inline
-int next_power_2(uint32_t value)
+ssize_t
+lodp_bf_calc(size_t m_ln2, size_t n, double p)
 {
-	int i = 0;
+	static const double ln_2_sq = 0.48045301391820139;
+	double m;
+	double nn;
+	double ln_p = log(p);
 
-	while (value >>= 1)
-		i++;
+	/*
+	 * Given the false positive rate and either the size OR the number of
+	 * entries, calculate the number of entries or the size.
+	 *
+	 * From https://en.wikipedia.org/wiki/Bloom_filter:
+	 *  m = - n * ln(p) / (ln(2) ^ 2)
+	 *  n = - m * (ln(2) ^ 2) / ln(p)
+	 *
+	 * Note:
+	 * Calculating the size ends up with a filter that has a higher
+	 * capacity than the supplied value as the code is designed around
+	 * power of 2 sized filters.  Calcuating the real capacity is trivial
+	 * and left as an excercise to the student.
+	 */
 
-	return (i + 1);
+	if (0 == m_ln2) {
+		if ((0 == n) || (0 == p))
+			return (-1);
+		m = - 1.0d * n * ln_p / ln_2_sq;
+		return ((size_t)ceil(log2(m)));
+	} else if (0 == n) {
+		if ((0 == m_ln2) || (0 == p))
+			return (-1);
+		m = 1 << m_ln2;
+		nn = -1.0d * m * ln_2_sq / ln_p;
+		return ((size_t)nn);
+	}
+
+	return (-1);
 }
 
 
