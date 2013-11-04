@@ -46,8 +46,8 @@ typedef struct {
 } lodp_cookie;
 
 
-#define REKEY_BYTE_COUNT		0x40000000      /* 1 GiB */
-#define REKEY_PACKET_COUNT		0x40000000      /* 2^30 packets */
+#define REKEY_TIME_MIN		5                       /* 5 sec */
+#define REKEY_PACKET_COUNT	0x80000000              /* 2^31 packets */
 
 
 /* Packet/session related helpers */
@@ -284,7 +284,6 @@ lodp_send_data_pkt(lodp_session *session, const uint8_t *payload, size_t len)
 		goto out;
 
 	session->stats.gen_tx_packets++;
-	session->stats.gen_tx_payload_bytes += len;
 	session->stats.tx_payload_bytes += len;
 
 	ret = encrypt_then_mac(session->ep, session, &session->tx_key, buf);
@@ -571,11 +570,10 @@ out:
 void
 lodp_rotate_cookie_key(lodp_endpoint *ep)
 {
-	time_t now;
+	time_t now = time(NULL);
 
 	assert(NULL != ep);
 
-	now = time(NULL);
 	memcpy(&ep->prev_cookie_key, &ep->cookie_key,
 	    sizeof(ep->prev_cookie_key));
 	lodp_rand_bytes(&ep->cookie_key, sizeof(ep->cookie_key));
@@ -679,7 +677,7 @@ generate_cookie(lodp_cookie *cookie, int prev_key, lodp_endpoint *ep,
 {
 	uint8_t blob[16 + 2 + LODP_MAC_KEY_LEN + LODP_BULK_KEY_LEN];
 	uint8_t *p;
-	time_t now;
+	time_t now = time(NULL);
 	int ret;
 
 	assert(NULL != cookie);
@@ -688,7 +686,6 @@ generate_cookie(lodp_cookie *cookie, int prev_key, lodp_endpoint *ep,
 	assert(NULL != addr);
 
 	/* If the cookie key rotation time is up, rotate the key */
-	now = time(NULL);
 	if (now > ep->cookie_rotate_time + COOKIE_ROTATE_INTERVAL)
 		lodp_rotate_cookie_key(ep);
 
@@ -1038,20 +1035,7 @@ session_should_rekey(const lodp_session *session)
 	if (STATE_ESTABLISHED != session->state)
 		return (0);
 
-	/*
-	 * Per the spec, sessions should rekey after ANY of:
-	 *  * 1 hour of time has passed since the current sesison key was
-	 *    created.
-	 *  * 1 GiB of traffic has been transmitted in either direction.
-	 *  * 2^30 packets have been transmitted in either direction.
-	 */
-
-	/* TODO: Time here */
-
-	if ((session->stats.gen_tx_payload_bytes > REKEY_BYTE_COUNT) ||
-	    (session->stats.gen_rx_payload_bytes > REKEY_BYTE_COUNT))
-		return (1);
-
+	/* 2^30 packets have been transmitted in either direction. */
 	if ((session->stats.gen_tx_packets > REKEY_PACKET_COUNT) ||
 	    (session->stats.gen_rx_packets > REKEY_PACKET_COUNT))
 		return (1);
@@ -1074,8 +1058,7 @@ session_on_rekey(lodp_session *session)
 	session->stats.gen_id++;
 	session->stats.gen_tx_packets = 0;
 	session->stats.gen_rx_packets = 0;
-	session->stats.gen_tx_payload_bytes = 0;
-	session->stats.gen_rx_payload_bytes = 0;
+	session->stats.gen_time = time(NULL);
 
 	/* Move the new keys over */
 	memcpy(&session->tx_key, &session->tx_rekey_key, sizeof(session->tx_key));
@@ -1284,6 +1267,7 @@ static int
 on_rekey_pkt(lodp_session *session, const lodp_pkt_rekey *rk_pkt)
 {
 	lodp_ecdh_public_key pub_key;
+	time_t now = time(NULL);
 	int ret = 0;
 
 	assert(NULL != session);
@@ -1307,10 +1291,15 @@ on_rekey_pkt(lodp_session *session, const lodp_pkt_rekey *rk_pkt)
 		return (ret);
 
 	/*
-	 * TODO: Limit the rekey interval to something sane so that a
-	 * broken/malicious client can't force us to spend a stupid amount of
-	 * time doing ECDH math
+	 * Limit the rekey interval to something sane so that a broken or evil
+	 * client can't force us to spend a stupid amount of time doing ECDH
+	 * math.
 	 */
+	if (now < session->stats.gen_time + REKEY_TIME_MIN) {
+		lodp_session_log(session, LODP_LOG_WARN, "Overaggressive rekeying by peer (%ld sec since last)",
+		    now - session->stats.gen_time);
+		return (LODP_ERR_BAD_PACKET);
+	}
 
 	/* Extract the peer's new public key */
 	memcpy(pub_key.public_key, rk_pkt->public_key, sizeof(pub_key.public_key));
@@ -1419,7 +1408,6 @@ on_data_pkt(lodp_session *session, const lodp_pkt_data *pkt)
 	payload_len = pkt->hdr.length - PKT_HDR_DATA_LEN;
 
 	session->stats.gen_rx_packets++;
-	session->stats.gen_rx_payload_bytes += payload_len;
 	session->stats.rx_payload_bytes += payload_len;
 
 	ret = session->ep->callbacks.on_recv_fn(session, payload, payload_len);

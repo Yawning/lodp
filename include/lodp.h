@@ -212,8 +212,7 @@ typedef struct {
 	uint32_t	gen_id;                 /* Generation ID (Counts rekeys) */
 	uint32_t	gen_tx_packets;         /* Packets sent this generation */
 	uint32_t	gen_rx_packets;         /* Packets received this generation */
-	uint32_t	gen_tx_payload_bytes;   /* Bytes sent this generation */
-	uint32_t	gen_rx_payload_bytes;   /* Bytes received this generation */
+	time_t		gen_time;               /* Generation start time */
 } lodp_session_stats;
 
 

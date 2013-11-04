@@ -342,6 +342,7 @@ lodp_session_init(const void *ctxt, lodp_endpoint *ep, const struct sockaddr
 
 	session->ctxt = (void *)ctxt;
 	session->ep = ep;
+	session->stats.gen_time = time(NULL);
 	memcpy(&session->peer_addr, addr, addr_len);
 	session->peer_addr_len = addr_len;
 	session->peer_addr_hash = lodp_hash(&session->peer_addr, addr_len);

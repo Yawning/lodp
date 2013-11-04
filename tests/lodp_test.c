@@ -31,6 +31,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ottery.h>
+#include <unistd.h>
 
 #include <assert.h>
 
@@ -225,10 +226,16 @@ main(int argc, char *argv[])
 		}
 	}
 
+	sleep(3);
 	/* Try rekeying */
 	ret = lodp_rekey(client_session);
 	if (ret) {
 		fprintf(stdout, "Rekey: ERROR: Failed %d", ret);
+	}
+	sleep(10);
+	ret = lodp_rekey(client_session);
+	if (ret) {
+		fprintf(stdout, "Rekey: 2nd attemt Failed ? %d\n", ret);
 	}
 
 	for (i = 0; i < 10; i++) {
