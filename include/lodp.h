@@ -233,7 +233,8 @@ int lodp_generate_keypair(uint8_t *pub_key, size_t *pub_key_len, uint8_t *
     priv_key, size_t *priv_key_len);
 
 lodp_endpoint *lodp_endpoint_bind(void *ctxt, const lodp_callbacks
-    *callbacks, const uint8_t *priv_key, size_t priv_key_len, int unsafe_logging);
+    *callbacks, const uint8_t *priv_key, size_t priv_key_len, const uint8_t
+    *node_id, size_t node_id_len, int unsafe_logging);
 int lodp_endpoint_set_context(lodp_endpoint *ep, void *ctxt);
 int lodp_endpoint_get_context(const lodp_endpoint *ep, void **ctxt);
 int lodp_endpoint_set_log_level(lodp_endpoint *ep, lodp_log_level level);
@@ -246,7 +247,7 @@ int lodp_endpoint_on_packet(lodp_endpoint *ep, const uint8_t *buf, size_t len,
 
 lodp_session *lodp_connect(const void *ctxt, lodp_endpoint *ep, const struct
     sockaddr *addr, size_t addr_len, const uint8_t *pub_key, size_t
-    pub_key_len);
+    pub_key_len, const uint8_t *node_id, size_t node_id_len);
 int lodp_session_set_context(lodp_session *session, void *ctxt);
 int lodp_session_get_context(const lodp_session *session, void **ctxt);
 int lodp_session_get_stats(const lodp_session *session, lodp_session_stats

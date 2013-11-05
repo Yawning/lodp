@@ -122,6 +122,9 @@ static int client_connected;
 int
 main(int argc, char *argv[])
 {
+	const uint8_t node_id[] = {
+		's', '-', 'N', 'o', 'd', 'e', '-', 'i', 'd'
+	};
 	uint8_t *test_payload;
 	int ret, i;
 	size_t pub_len, priv_len;
@@ -159,7 +162,7 @@ main(int argc, char *argv[])
 
 	/* Set up the server endpoint */
 	server_ep = lodp_endpoint_bind(NULL, &s_test_cbs, server_priv_key,
-		sizeof(server_priv_key), 1);
+		sizeof(server_priv_key), node_id, sizeof(node_id), 1);
 	if (NULL == server_ep) {
 		fprintf(stderr, "ERROR: Failed to initialize server endpoint\n");
 		goto out;
@@ -167,7 +170,7 @@ main(int argc, char *argv[])
 	lodp_endpoint_set_log_level(server_ep, LODP_LOG_DEBUG);
 
 	/* Set up the client endpoint */
-	client_ep = lodp_endpoint_bind(NULL, &c_test_cbs, NULL, 0, 1);
+	client_ep = lodp_endpoint_bind(NULL, &c_test_cbs, NULL, 0, NULL, 0, 1);
 	if (NULL == client_ep) {
 		fprintf(stderr, "ERROR: Failed to initialize client endpoint\n");
 		goto out_serv;
@@ -179,7 +182,7 @@ main(int argc, char *argv[])
 	 */
 	client_session = lodp_connect(NULL, client_ep, (struct sockaddr *)
 		&server_addr, sizeof(server_addr), server_pub_key,
-		sizeof(server_pub_key));
+		sizeof(server_pub_key), node_id, sizeof(node_id));
 	if (NULL == client_session) {
 		fprintf(stderr, "ERROR: Failed to connect to server\n");
 		goto out_client;

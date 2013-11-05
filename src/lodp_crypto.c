@@ -27,6 +27,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <stdio.h>
+
 #include <string.h>
 #include <stdlib.h>
 #include <alloca.h>
@@ -46,6 +48,7 @@ extern int curve25519_donna(uint8_t *mypublic, const uint8_t *secret, const
     uint8_t *basepoint);
 
 static int curve25519_generate_pubkey(lodp_ecdh_keypair *keypair);
+static int curve25519_validate_secret(lodp_ecdh_shared_secret *secret);
 static int lodp_extract(uint8_t *prk, const uint8_t *salt, const uint8_t *ikm,
     size_t prk_len, size_t salt_len, size_t ikm_len);
 static int lodp_expand(uint8_t *okm, const uint8_t *prk, const uint8_t *info,
@@ -107,7 +110,6 @@ lodp_gen_keypair(lodp_ecdh_keypair *keypair, const uint8_t *buf, size_t len)
 			lodp_memwipe(tmp, sizeof(tmp));
 			if (ret)
 				goto out;
-
 #else
 			lodp_rand_bytes(keypair->private_key.private_key,
 			    LODP_ECDH_PRIVATE_KEY_LEN);
@@ -184,7 +186,7 @@ lodp_ecdh(lodp_ecdh_shared_secret *secret, const lodp_ecdh_private_key
 
 
 int
-lodp_mac(uint8_t *digest, uint8_t *buf, const lodp_mac_key *key, size_t
+lodp_mac(uint8_t *digest, const uint8_t *buf, const lodp_mac_key *key, size_t
     digest_len, size_t len)
 {
 	assert(NULL != digest);
@@ -199,6 +201,170 @@ lodp_mac(uint8_t *digest, uint8_t *buf, const lodp_mac_key *key, size_t
 		return (LODP_ERR_INVAL);
 
 	return (0);
+}
+
+
+int
+lodp_ntor(uint8_t *shared_secret, uint8_t *auth,
+    const lodp_ecdh_public_key *X, const lodp_ecdh_private_key *x,
+    const lodp_ecdh_public_key *Y, const lodp_ecdh_private_key *y,
+    const lodp_ecdh_public_key *B, const lodp_ecdh_private_key *b,
+    const uint8_t *node_id, size_t node_id_len,
+    size_t shared_secret_len, size_t auth_len)
+{
+	static const uint8_t PROTOID[] = {
+		'l', 'o', 'd', 'p', '-', 'n', 't', 'o', 'r', '-', '1'
+	};
+	static const uint8_t RESPONDER[] = {
+		'R', 'e', 's', 'p', 'o', 'n', 'd', 'e', 'r'
+	};
+	static const lodp_mac_key t_key = {
+		{
+			'l', 'o', 'd', 'p', '-', 'n', 't', 'o', 'r', '-',
+			'1', ':', 'k', 'e', 'y', '_', 'e', 'x', 't', 'r',
+			'a', 'c', 't', 0
+		}
+	};
+	static const lodp_mac_key t_verify = {
+		{
+			'l', 'o', 'd', 'p', '-', 'n', 't', 'o', 'r', '-',
+			'1', ':', 'k', 'e', 'y', '_', 'v', 'e', 'r', 'i',
+			'f', 'y', 0
+		}
+	};
+	static const lodp_mac_key t_mac = {
+		{
+			'l', 'o', 'd', 'p', '-', 'n', 't', 'o', 'r', '-',
+			'1', ':', 'm', 'a', 'c', 0
+		}
+	};
+	lodp_ecdh_shared_secret secret;
+	uint8_t verify[LODP_MAC_DIGEST_LEN];
+	uint8_t *secret_input, *auth_input, *p;
+	size_t alloc_len;
+	size_t secret_input_len;
+	size_t auth_input_len;
+	int ret = LODP_ERR_BAD_HANDSHAKE;
+
+	if ((NULL == shared_secret) || (LODP_MAC_DIGEST_LEN !=
+		    shared_secret_len))
+		return (LODP_ERR_INVAL);
+
+	if ((NULL == auth) || (LODP_MAC_DIGEST_LEN != auth_len))
+		return (LODP_ERR_INVAL);
+
+	if ((NULL == node_id) || (0 == node_id_len))
+		return (LODP_ERR_INVAL);
+
+	if ((NULL == B) || (NULL == X) || (NULL == Y))
+		return (LODP_ERR_INVAL);
+
+	/*
+	 * WARNING: Here be dragons
+	 *
+	 * This is an implementation of the Tor project's ntor handshake, with
+	 * minor differences:
+	 *  * As handshake failures do not result in any response traffic that
+	 *    leaks timing information can only the successful path is constant
+	 *    time.
+	 *  * Instead of HMAC-SHA256, use BLAKE2s.
+	 *  * Instead of HKDF-HMAC-SHA256, use lopd_expand.
+	 *  * Change the personalization to differentiate it from standard ntor.
+	 */
+
+	alloc_len = LODP_ECDH_SECRET_LEN * 2 + node_id_len +
+	    3 * LODP_ECDH_PUBLIC_KEY_LEN + sizeof(PROTOID) + sizeof(RESPONDER);
+	secret_input_len = LODP_ECDH_SECRET_LEN * 2 + node_id_len +
+	    3 * LODP_ECDH_PUBLIC_KEY_LEN + sizeof(PROTOID);
+	auth_input_len = sizeof(verify) + node_id_len +
+	    3 * LODP_ECDH_PUBLIC_KEY_LEN + sizeof(PROTOID) + sizeof(RESPONDER);
+	p = secret_input = alloca(alloc_len);
+	if (NULL != b) {
+		if (NULL == y)
+			return (LODP_ERR_INVAL);
+		/*
+		 * Responder:
+		 * secret_input = EXP(X,y) | EXP(X,b) | ID | B | X | Y | PROTOID
+		 */
+		lodp_ecdh(&secret, y, X);
+		if (curve25519_validate_secret(&secret))
+			goto out;
+		memcpy(p, secret.secret, LODP_ECDH_SECRET_LEN);
+		p += LODP_ECDH_SECRET_LEN;
+		lodp_ecdh(&secret, b, X);
+		if (curve25519_validate_secret(&secret))
+			goto out;
+		memcpy(p, secret.secret, LODP_ECDH_SECRET_LEN);
+		p += LODP_ECDH_SECRET_LEN;
+	} else {
+		if (NULL == x)
+			return (LODP_ERR_INVAL);
+
+		/*
+		 * Initiator:
+		 * secret_input = EXP(Y,x) | EXP(B,x) | ID | B | X | Y | PROTOID
+		 */
+		lodp_ecdh(&secret, x, Y);
+		if (curve25519_validate_secret(&secret))
+			goto out;
+		memcpy(p, secret.secret, LODP_ECDH_SECRET_LEN);
+		p += LODP_ECDH_SECRET_LEN;
+		lodp_ecdh(&secret, x, B);
+		if (curve25519_validate_secret(&secret))
+			goto out;
+		memcpy(p, secret.secret, LODP_ECDH_SECRET_LEN);
+		p += LODP_ECDH_SECRET_LEN;
+	}
+	memcpy(p, node_id, node_id_len);
+	p += node_id_len;
+	memcpy(p, B->public_key, LODP_ECDH_PUBLIC_KEY_LEN);
+	p += LODP_ECDH_PUBLIC_KEY_LEN;
+	memcpy(p, X->public_key, LODP_ECDH_PUBLIC_KEY_LEN);
+	p += LODP_ECDH_PUBLIC_KEY_LEN;
+	memcpy(p, Y->public_key, LODP_ECDH_PUBLIC_KEY_LEN);
+	p += LODP_ECDH_PUBLIC_KEY_LEN;
+	memcpy(p, PROTOID, sizeof(PROTOID));
+	p += sizeof(PROTOID);
+	assert(p - secret_input_len == secret_input);
+
+	/*
+	 * Derive the common variables:
+	 * KEY_SEED = H(secret_input, t_key)
+	 * verify = H(secret_input, t_verify)
+	 * auth_input = verify | ID | B | Y | X | PROTOID | "Responder"
+	 * auth = H(auth_input, t_mac)
+	 *
+	 * Note:
+	 * The code abuses the fact that auth_input and secret_input have
+	 * overlapping elements.
+	 */
+
+	ret = lodp_mac(shared_secret, secret_input, &t_key, shared_secret_len,
+	    secret_input_len);
+	if (ret)
+		goto out;
+	ret = lodp_mac(verify, secret_input, &t_verify, sizeof(verify),
+	    secret_input_len);
+	if (ret)
+		goto out;
+
+	auth_input = secret_input + 2 * LODP_ECDH_SECRET_LEN - sizeof(verify);
+	memcpy(auth_input, verify, sizeof(verify));
+	p = secret_input + secret_input_len;
+	memcpy(p, RESPONDER, sizeof(RESPONDER));
+	p += sizeof(RESPONDER);
+	assert(p - alloc_len == secret_input);
+	assert(p - auth_input_len == auth_input);
+
+	ret = lodp_mac(auth, auth_input, &t_mac, auth_len, auth_input_len);
+	if (ret)
+		goto out;
+
+out:
+	lodp_memwipe(secret_input, alloc_len);
+	lodp_memwipe(&secret, sizeof(secret));
+	lodp_memwipe(verify, sizeof(verify));
+	return (ret);
 }
 
 
@@ -273,7 +439,7 @@ out:
 
 int
 lodp_derive_sessionkeys(lodp_symmetric_key *init_key, lodp_symmetric_key
-    *resp_key, const lodp_ecdh_shared_secret *secret)
+    *resp_key, const uint8_t *shared_secret, size_t shared_secret_len)
 {
 	static const uint8_t salt[] = {
 		'L', 'O', 'D', 'P', '-', 'S', 'e', 's', 's', 'i',
@@ -285,7 +451,8 @@ lodp_derive_sessionkeys(lodp_symmetric_key *init_key, lodp_symmetric_key
 
 	assert(NULL != init_key);
 	assert(NULL != resp_key);
-	assert(NULL != secret);
+	assert(NULL != shared_secret);
+	assert(LODP_MAC_DIGEST_LEN == shared_secret_len);
 
 	assert(is_initialized);
 
@@ -299,8 +466,8 @@ lodp_derive_sessionkeys(lodp_symmetric_key *init_key, lodp_symmetric_key
 	 * ResponderXChaChaKey = SessionKey[96:127]
 	 */
 
-	prk = secret->secret;
-	if (lodp_expand(okm, prk, salt, sizeof(okm), sizeof(secret->secret),
+	prk = shared_secret;
+	if (lodp_expand(okm, prk, salt, sizeof(okm), shared_secret_len,
 	    sizeof(salt)))
 		goto out;
 	p = okm;
@@ -390,6 +557,16 @@ curve25519_generate_pubkey(lodp_ecdh_keypair *keypair)
 	    keypair->private_key.private_key, basepoint);
 
 	return (0);
+}
+
+
+static int
+curve25519_validate_secret(lodp_ecdh_shared_secret *secret)
+{
+	const uint8_t infpoint[LODP_ECDH_PUBLIC_KEY_LEN] = { 0 };
+
+	assert(NULL != secret);
+	return (!lodp_memeq(secret->secret, infpoint, LODP_ECDH_SECRET_LEN));
 }
 
 

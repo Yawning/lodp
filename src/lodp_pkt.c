@@ -787,166 +787,65 @@ static int
 ntor_handshake(lodp_session *session, lodp_symmetric_key *init_key,
     lodp_symmetric_key *resp_key, const lodp_ecdh_public_key *pub_key)
 {
-	static const uint8_t PROTOID[] = {
-		'l', 'o', 'd', 'p', '-', 'n', 't', 'o', 'r', '-', '1'
-	};
-	static const uint8_t RESPONDER[] = {
-		'R', 'e', 's', 'p', 'o', 'n', 'd', 'e', 'r'
-	};
-	static const lodp_mac_key ss_key = {
-		{
-			'l', 'o', 'd', 'p', '-', 'n', 't', 'o', 'r', '-',
-			'1', ':', 'k', 'e', 'y', '_', 'e', 'x', 't', 'r',
-			'a', 'c', 't', 0
-		}
-	};
-	static const lodp_mac_key verify_key = {
-		{
-			'l', 'o', 'd', 'p', '-', 'n', 't', 'o', 'r', '-',
-			'1', ':', 'k', 'e', 'y', '_', 'e', 'x', 'p', 'a',
-			'n', 'd', 0
-		}
-	};
-	static const lodp_mac_key auth_key = {
-		{
-			'l', 'o', 'd', 'p', '-', 'n', 't', 'o', 'r', '-',
-			'1', ':', 'm', 'a', 'c', 0
-		}
-	};
-
-	struct __attribute__ ((__packed__)) {
-		uint8_t secret_1[LODP_ECDH_SECRET_LEN];
-		uint8_t secret_2[LODP_ECDH_SECRET_LEN];
-		uint8_t B[LODP_ECDH_PUBLIC_KEY_LEN];
-		uint8_t X[LODP_ECDH_PUBLIC_KEY_LEN];
-		uint8_t Y[LODP_ECDH_PUBLIC_KEY_LEN];
-		uint8_t id[sizeof(PROTOID)];
-	} secret_input;
-	struct __attribute__ ((__packed__)) {
-		uint8_t verify[LODP_ECDH_SECRET_LEN];
-		uint8_t B[LODP_ECDH_PUBLIC_KEY_LEN];
-		uint8_t X[LODP_ECDH_PUBLIC_KEY_LEN];
-		uint8_t Y[LODP_ECDH_PUBLIC_KEY_LEN];
-		uint8_t id[sizeof(PROTOID)];
-		uint8_t responder[sizeof(RESPONDER)];
-	} auth_input;
-	uint8_t verify[LODP_MAC_DIGEST_LEN];
-	lodp_ecdh_shared_secret secret;
-	const lodp_ecdh_public_key *X;
-	const lodp_ecdh_public_key *Y;
-	const lodp_ecdh_private_key *y;
-	const lodp_ecdh_public_key *B;
-	int ret;
-
-	assert(NULL != session);
-	assert(NULL != pub_key);
-
-	/*
-	 * WARNING: Here be dragons
-	 *
-	 * This is where we do the modified ntor handshake and obtain the
-	 * session keys.  This routine is also only constant time when the
-	 * handshake is successful and not when it fails.  This is ok because
-	 * no indication of failure is sent on the wire.
-	 */
+	uint8_t shared_secret[LODP_MAC_DIGEST_LEN];
+	int ret = 0;
 
 	if (session->is_initiator) {
-		const lodp_ecdh_private_key *x;
-
 		/*
 		 * Initiator:
 		 *  * X -> session->session_ecdh_keypair.public_key
 		 *  * x -> session->session_ecdh_keypair.private_key
-		 *  * Y -> public_key
+		 *  * Y -> pub_key
 		 *  * B -> session->remote_public_key
-		 *
-		 * SecretInput = EXP(Y,x) | EXP(B,x) | B | X | Y | PROTOID
 		 */
-
-		X = &session->session_ecdh_keypair.public_key;
-		x = &session->session_ecdh_keypair.private_key;
-		Y = pub_key;
-		B = &session->remote_public_key;
-
-		lodp_ecdh(&secret, x, Y);
-		if (lodp_ecdh_validate_pubkey(Y))
-			goto out;
-		memcpy(secret_input.secret_1, secret.secret, LODP_ECDH_SECRET_LEN);
-		lodp_ecdh(&secret, x, B);
-		if (lodp_ecdh_validate_pubkey(B))
-			goto out;
-		memcpy(secret_input.secret_2, secret.secret, LODP_ECDH_SECRET_LEN);
+		ret = lodp_ntor(shared_secret,
+		    session->session_secret_verifier,
+		    &session->session_ecdh_keypair.public_key,	// X
+		    &session->session_ecdh_keypair.private_key, // x
+		    pub_key,					// Y
+		    NULL,					// y
+		    &session->remote_public_key,		// B
+		    NULL,					// b
+		    session->peer_node_id,
+		    session->peer_node_id_len,
+		    sizeof(shared_secret),
+		    sizeof(session->session_secret_verifier));
 	} else {
-		const lodp_ecdh_private_key *b;
-
 		/*
 		 * Responder:
-		 *  * X-> public_key
+		 *  * X-> pub_key
 		 *  * Y -> session->session_ecdh_keypair.public_key
 		 *  * y -> session->session_ecdh_keypair.private_key
 		 *  * B -> ep->intro_ecdh_keypair.public_key
 		 *  * b -> ep->intro_ecdh_keypair.private_key
-		 *
-		 * SecretInput = EXP(X, y) | EXP(X,b) |  B | X | Y | PROTOID
 		 */
-
-		X = pub_key;
-		Y = &session->session_ecdh_keypair.public_key;
-		y = &session->session_ecdh_keypair.private_key;
-		B = &session->ep->intro_ecdh_keypair.public_key;
-		b = &session->ep->intro_ecdh_keypair.private_key;
-		lodp_ecdh(&secret, y, X);
-		if (lodp_ecdh_validate_pubkey(X))
-			goto out;
-		memcpy(secret_input.secret_1, secret.secret, LODP_ECDH_SECRET_LEN);
-		lodp_ecdh(&secret, b, X);
-		memcpy(secret_input.secret_2, secret.secret, LODP_ECDH_SECRET_LEN);
+		ret = lodp_ntor(shared_secret,
+		    session->session_secret_verifier,
+		    pub_key,					// X
+		    NULL,					// x
+		    &session->session_ecdh_keypair.public_key,	// Y
+		    &session->session_ecdh_keypair.private_key, // y
+		    &session->ep->intro_ecdh_keypair.public_key,// B
+		    &session->ep->intro_ecdh_keypair.private_key, //b
+		    session->ep->node_id,
+		    session->ep->node_id_len,
+		    sizeof(shared_secret),
+		    sizeof(session->session_secret_verifier));
+	}
+	if (ret) {
+out_err:
+		lodp_memwipe(session->session_secret_verifier,
+		    sizeof(session->session_secret_verifier));
+		goto out;
 	}
 
-	/*
-	 * SharedSecret = H(PROTOID | ":key_extract", SecretInput)
-	 * Verify = H(PROTOID | ":key_verify", SecretInput)
-	 */
-
-	memcpy(secret_input.id, PROTOID, sizeof(PROTOID));
-	memcpy(secret_input.B, B->public_key, LODP_ECDH_PUBLIC_KEY_LEN);
-	memcpy(secret_input.X, X->public_key, LODP_ECDH_PUBLIC_KEY_LEN);
-	memcpy(secret_input.Y, Y->public_key, LODP_ECDH_PUBLIC_KEY_LEN);
-	ret = lodp_mac(secret.secret, (uint8_t *)&secret_input, &ss_key,
-		sizeof(secret.secret), sizeof(secret_input));
+	ret = lodp_derive_sessionkeys(init_key, resp_key, shared_secret,
+	    sizeof(shared_secret));
 	if (ret)
-		goto out;
-	ret = lodp_mac(verify, (uint8_t *)&secret_input, &verify_key,
-		sizeof(verify), sizeof(secret_input));
-	if (ret)
-		goto out;
-	memcpy(session->session_secret.secret, secret.secret,
-	    sizeof(secret.secret));
-
-	/*
-	 * AuthInput = Verify | B | Y | X | PROTOID | "Responder"
-	 * Auth = H(PROTOID | ":mac", AuthInput)
-	 */
-
-	memcpy(auth_input.verify, verify, sizeof(verify));
-	memcpy(auth_input.B, B->public_key, LODP_ECDH_PUBLIC_KEY_LEN);
-	memcpy(auth_input.X, X->public_key, LODP_ECDH_PUBLIC_KEY_LEN);
-	memcpy(auth_input.Y, Y->public_key, LODP_ECDH_PUBLIC_KEY_LEN);
-	memcpy(auth_input.id, PROTOID, sizeof(PROTOID));
-	memcpy(auth_input.responder, RESPONDER, sizeof(RESPONDER));
-	ret = lodp_mac(session->session_secret_verifier, (uint8_t *)&auth_input,
-		&auth_key, sizeof(session->session_secret_verifier),
-		sizeof(auth_input));
-	if (ret)
-		goto out;
-
-	ret = lodp_derive_sessionkeys(init_key, resp_key, &secret);
+		goto out_err;
 
 out:
-	lodp_memwipe(&secret_input, sizeof(secret_input));
-	lodp_memwipe(&secret, sizeof(secret));
-	lodp_memwipe(verify, sizeof(verify));
-	lodp_memwipe(&auth_input, sizeof(auth_input));
+	lodp_memwipe(shared_secret, sizeof(shared_secret));
 	return ((0 == ret) ? ret : LODP_ERR_BAD_HANDSHAKE);
 }
 
@@ -1270,7 +1169,7 @@ on_handshake_pkt(lodp_endpoint *ep, lodp_session *session, const
 
 	/* Generate a TCB */
 	session = lodp_session_init(NULL, ep, addr, addr_len, hs_pkt->public_key,
-		sizeof(hs_pkt->public_key), 0);
+		sizeof(hs_pkt->public_key), NULL, 0, 0);
 	if (NULL == session) {
 		ret = LODP_ERR_NOBUFS;
 		goto out_wipe;

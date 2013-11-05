@@ -51,9 +51,11 @@ struct lodp_endpoint_s {
 	lodp_callbacks		callbacks;      /* User callbacks */
 	lodp_endpoint_stats	stats;
 
-	/* Keys used for session initialization */
+	/* Things used for session initialization */
 	lodp_ecdh_keypair	intro_ecdh_keypair;
 	lodp_symmetric_key	intro_sym_keys;
+	uint8_t *		node_id;
+	size_t			node_id_len;
 
 	/* Replay protection */
 	lodp_mac_key		cookie_key;             /* Cookie key */
@@ -116,10 +118,13 @@ struct lodp_session_s {
 	uint32_t		rx_last_seq;
 	uint64_t		rx_bitmap;
 
-	/* Connection Table */
 	struct sockaddr_storage peer_addr;
 	socklen_t		peer_addr_len;
 	char			peer_addr_str[LODP_ADDRSTRLEN];
+	uint8_t *		peer_node_id;
+	size_t			peer_node_id_len;
+
+	/* Connection Table */	
 	uint64_t		peer_addr_hash;
 	RB_ENTRY(lodp_session_s) entry;
 };
@@ -127,7 +132,8 @@ struct lodp_session_s {
 
 lodp_session *lodp_session_init(const void *ctxt, lodp_endpoint *ep,
     const struct sockaddr *addr, size_t addr_len,
-    const uint8_t *pub_key, size_t pub_key_len, int is_initiator);
+    const uint8_t *pub_key, size_t pub_key_len, const uint8_t *node_id,
+    size_t node_id_len, int is_initiator);
 void lodp_session_destroy(lodp_session *session);
 
 

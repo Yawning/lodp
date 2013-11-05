@@ -88,7 +88,8 @@ lodp_term(void)
 
 lodp_endpoint *
 lodp_endpoint_bind(void *ctxt, const lodp_callbacks *callbacks,
-    const uint8_t *priv_key, size_t priv_key_len, int unsafe_logging)
+    const uint8_t *priv_key, size_t priv_key_len, const uint8_t *node_id, size_t
+    node_id_len, int unsafe_logging)
 {
 	lodp_endpoint *ep;
 
@@ -103,7 +104,8 @@ lodp_endpoint_bind(void *ctxt, const lodp_callbacks *callbacks,
 	if ((NULL == priv_key) && (NULL == callbacks->on_connect_fn))
 		return (NULL);
 
-	if ((NULL != priv_key) && (NULL == callbacks->on_accept_fn))
+	if ((NULL != priv_key) && ((NULL == callbacks->on_accept_fn) || (NULL ==
+			    node_id) || (0 == node_id_len)))
 		return (NULL);
 
 	ep = calloc(1, sizeof(*ep));
@@ -131,6 +133,15 @@ lodp_endpoint_bind(void *ctxt, const lodp_callbacks *callbacks,
 
 	/* Endpoint that supports incoming connections */
 	ep->has_intro_keys = 1;
+
+	/* Save the node id */
+	ep->node_id = calloc(1, node_id_len);
+	if (NULL == ep->node_id) {
+		free_endpoint(ep);
+		return (NULL);
+	}
+	ep->node_id_len = node_id_len;
+	memcpy(ep->node_id, node_id, node_id_len);
 
 	/* Initialize Curve25519 keys */
 	if (lodp_gen_keypair(&ep->intro_ecdh_keypair, priv_key, priv_key_len)) {
@@ -324,9 +335,12 @@ lodp_endpoint_on_packet(lodp_endpoint *ep, const uint8_t *buf, size_t len,
 lodp_session *
 lodp_connect(const void *ctxt, lodp_endpoint *ep, const struct sockaddr
     *addr, size_t addr_len, const uint8_t *pub_key,
-    size_t pub_key_len)
+    size_t pub_key_len, const uint8_t *node_id, size_t node_id_len)
 {
 	if ((NULL == ep) || (NULL == addr) || (NULL == pub_key))
+		return (NULL);
+
+	if ((NULL == node_id) || (0 == node_id_len))
 		return (NULL);
 
 	if (LODP_ECDH_PUBLIC_KEY_LEN != pub_key_len)
@@ -338,15 +352,15 @@ lodp_connect(const void *ctxt, lodp_endpoint *ep, const struct sockaddr
 	if ((AF_INET != addr->sa_family) && (AF_INET6 != addr->sa_family))
 		return (NULL);
 
-	return (lodp_session_init(ctxt, ep, addr, addr_len, pub_key, pub_key_len,
-	       1));
+	return (lodp_session_init(ctxt, ep, addr, addr_len, pub_key,
+		    pub_key_len, node_id, node_id_len, 1));
 }
 
 
 lodp_session *
 lodp_session_init(const void *ctxt, lodp_endpoint *ep, const struct sockaddr
-    *addr, size_t addr_len, const uint8_t *pub_key, size_t
-    pub_key_len, int is_initiator)
+    *addr, size_t addr_len, const uint8_t *pub_key, size_t pub_key_len,
+    const uint8_t *node_id, size_t node_id_len, int is_initiator)
 {
 	lodp_session *session;
 
@@ -395,6 +409,18 @@ lodp_session_init(const void *ctxt, lodp_endpoint *ep, const struct sockaddr
 		session->state = STATE_ESTABLISHED;
 		goto add_and_return;
 	}
+
+	/* Save the peer's node id used in the ntor handshake */
+	assert(NULL != node_id);
+	assert(0 != node_id_len);
+
+	session->peer_node_id = calloc(1, node_id_len);
+	if (NULL == session->peer_node_id) {
+		free_session(session);
+		return (NULL);
+	}
+	session->peer_node_id_len = node_id_len;
+	memcpy(session->peer_node_id, node_id, node_id_len);
 
 	session->state = STATE_INIT;
 	session->is_initiator = 1;
@@ -601,6 +627,8 @@ free_endpoint(lodp_endpoint *ep)
 	assert(NULL != ep);
 	assert(RB_EMPTY(&ep->sessions));
 
+	if (NULL != ep->node_id)
+		free(ep->node_id);
 	if (NULL != ep->init_filter)
 		lodp_bf_free(ep->init_filter);
 #ifdef TINFOIL
@@ -620,6 +648,8 @@ free_session(lodp_session *session)
 {
 	assert(NULL != session);
 
+	if (NULL != session->peer_node_id)
+		free(session->peer_node_id);
 	if (NULL != session->cookie) {
 		lodp_memwipe(session->cookie, session->cookie_len);
 		free(session->cookie);

@@ -93,8 +93,8 @@ typedef struct {
 } lodp_symmetric_key;
 
 
-int lodp_mac(uint8_t *digest, uint8_t *buf, const lodp_mac_key *key, size_t
-    digest_len, size_t len);
+int lodp_mac(uint8_t *digest, const uint8_t *buf, const lodp_mac_key *key,
+    size_t digest_len, size_t len);
 int lodp_encrypt(uint8_t *ciphertext, const lodp_bulk_key *key, const uint8_t
     *iv, const uint8_t *plaintext, size_t len);
 int lodp_decrypt(uint8_t *plaintext, const lodp_bulk_key *key, const uint8_t
@@ -105,7 +105,13 @@ int lodp_decrypt(uint8_t *plaintext, const lodp_bulk_key *key, const uint8_t
 int lodp_derive_introkeys(lodp_symmetric_key *sym_key, const
     lodp_ecdh_public_key *pub_key);
 int lodp_derive_sessionkeys(lodp_symmetric_key *init_key, lodp_symmetric_key
-    *resp_key, const lodp_ecdh_shared_secret *secret);
+    *resp_key, const uint8_t *shared_secret, size_t shared_secret_len);
+int lodp_ntor(uint8_t *shared_secret, uint8_t *auth,
+    const lodp_ecdh_public_key *X, const lodp_ecdh_private_key *x,
+    const lodp_ecdh_public_key *Y, const lodp_ecdh_private_key *y,
+    const lodp_ecdh_public_key *B, const lodp_ecdh_private_key *b,
+    const uint8_t *node_id, size_t node_id_len,
+    size_t shared_secret_len, size_t auth_len);
 
 
 /* Utility Routines */
