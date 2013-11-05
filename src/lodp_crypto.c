@@ -75,7 +75,7 @@ lodp_crypto_init(void)
 	/* Initialize the hash function key */
 	lodp_rand_bytes(hash_key.hash_key, sizeof(hash_key.hash_key));
 
-	return (0);
+	return (LODP_ERR_OK);
 }
 
 
@@ -92,16 +92,21 @@ lodp_crypto_term(void)
 int
 lodp_gen_keypair(lodp_ecdh_keypair *keypair, const uint8_t *buf, size_t len)
 {
-	int ret = 0;
+	int ret;
 	int i;
 
 	assert(NULL != keypair);
-
 	assert(is_initialized);
 
 	if (NULL == buf) {
 		for (i = 0; i < 3; i++) {
 #ifdef TINFOIL
+			/*
+			 * Tor does something like this out of mistrust of the
+			 * PRNG, but it's relegated to a TINFOIL option since
+			 * bad things will happen in general if the PRNG is
+			 * weak.
+			 */
 			uint8_t tmp[LODP_ECDH_PRIVATE_KEY_LEN];
 
 			lodp_rand_bytes(tmp, sizeof(tmp));
@@ -145,7 +150,7 @@ lodp_gen_pubkey(lodp_ecdh_public_key *pub_key, const uint8_t *buf, size_t len)
 
 	memcpy(pub_key->public_key, buf, LODP_ECDH_PUBLIC_KEY_LEN);
 
-	return (0);
+	return (LODP_ERR_OK);
 }
 
 
@@ -166,7 +171,7 @@ lodp_ecdh_validate_pubkey(const lodp_ecdh_public_key *pub_key)
 	if (!lodp_memeq(pub_key->public_key, infpoint, LODP_ECDH_PUBLIC_KEY_LEN))
 		return (LODP_ERR_BAD_PUBKEY);
 
-	return (0);
+	return (LODP_ERR_OK);
 }
 
 
@@ -200,7 +205,7 @@ lodp_mac(uint8_t *digest, const uint8_t *buf, const lodp_mac_key *key, size_t
 	    LODP_MAC_KEY_LEN))
 		return (LODP_ERR_INVAL);
 
-	return (0);
+	return (LODP_ERR_OK);
 }
 
 
@@ -244,20 +249,16 @@ lodp_ntor(uint8_t *shared_secret, uint8_t *auth,
 	size_t alloc_len;
 	size_t secret_input_len;
 	size_t auth_input_len;
-	int ret = LODP_ERR_BAD_HANDSHAKE;
+	int ret;
 
-	if ((NULL == shared_secret) || (LODP_MAC_DIGEST_LEN !=
-		    shared_secret_len))
-		return (LODP_ERR_INVAL);
-
-	if ((NULL == auth) || (LODP_MAC_DIGEST_LEN != auth_len))
-		return (LODP_ERR_INVAL);
-
-	if ((NULL == node_id) || (0 == node_id_len))
-		return (LODP_ERR_INVAL);
-
-	if ((NULL == B) || (NULL == X) || (NULL == Y))
-		return (LODP_ERR_INVAL);
+	assert(NULL != shared_secret);
+	assert(NULL != auth);
+	assert(NULL != node_id);
+	assert(NULL != B);
+	assert(NULL != X);
+	assert(NULL != Y);
+	assert(LODP_MAC_DIGEST_LEN == shared_secret_len);
+	assert(LODP_MAC_DIGEST_LEN == auth_len);
 
 	/*
 	 * WARNING: Here be dragons
@@ -280,12 +281,14 @@ lodp_ntor(uint8_t *shared_secret, uint8_t *auth,
 	    3 * LODP_ECDH_PUBLIC_KEY_LEN + sizeof(PROTOID) + sizeof(RESPONDER);
 	p = secret_input = alloca(alloc_len);
 	if (NULL != b) {
-		if (NULL == y)
-			return (LODP_ERR_INVAL);
 		/*
 		 * Responder:
 		 * secret_input = EXP(X,y) | EXP(X,b) | ID | B | X | Y | PROTOID
 		 */
+
+		assert(NULL != y);
+		assert(NULL != b);
+
 		lodp_ecdh(&secret, y, X);
 		if (curve25519_validate_secret(&secret))
 			goto out;
@@ -297,13 +300,13 @@ lodp_ntor(uint8_t *shared_secret, uint8_t *auth,
 		memcpy(p, secret.secret, LODP_ECDH_SECRET_LEN);
 		p += LODP_ECDH_SECRET_LEN;
 	} else {
-		if (NULL == x)
-			return (LODP_ERR_INVAL);
-
 		/*
 		 * Initiator:
 		 * secret_input = EXP(Y,x) | EXP(B,x) | ID | B | X | Y | PROTOID
 		 */
+
+		assert(NULL != x);
+
 		lodp_ecdh(&secret, x, Y);
 		if (curve25519_validate_secret(&secret))
 			goto out;
@@ -364,7 +367,7 @@ out:
 	lodp_memwipe(secret_input, alloc_len);
 	lodp_memwipe(&secret, sizeof(secret));
 	lodp_memwipe(verify, sizeof(verify));
-	return (ret);
+	return (LODP_ERR_OK == ret) ? ret : LODP_ERR_BAD_HANDSHAKE;
 }
 
 
@@ -383,7 +386,7 @@ lodp_encrypt(uint8_t *ciphertext, const lodp_bulk_key *key, const uint8_t *iv,
 	xchacha((chacha_key *)key, (chacha_iv24 *)iv, plaintext, ciphertext,
 	    len, 20);
 
-	return (0);
+	return (LODP_ERR_OK);
 }
 
 
@@ -405,7 +408,7 @@ lodp_derive_introkeys(lodp_symmetric_key *sym_key, const lodp_ecdh_public_key
 	};
 	uint8_t prk[LODP_MAC_DIGEST_LEN];
 	uint8_t okm[LODP_MAC_KEY_LEN + LODP_BULK_KEY_LEN];
-	int ret = LODP_ERR_INVAL;
+	int ret;
 
 	assert(NULL != sym_key);
 	assert(NULL != pub_key);
@@ -420,15 +423,17 @@ lodp_derive_introkeys(lodp_symmetric_key *sym_key, const lodp_ecdh_public_key
 	 * IntroXChaChaKey = IntroKey[32:63]
 	 */
 
-	if (lodp_extract(prk, salt, pub_key->public_key, sizeof(prk),
-	    sizeof(salt), LODP_ECDH_PUBLIC_KEY_LEN))
+	ret = lodp_extract(prk, salt, pub_key->public_key, sizeof(prk),
+	    sizeof(salt), LODP_ECDH_PUBLIC_KEY_LEN);
+	if (ret)
 		goto out;
-	if (lodp_expand(okm, prk, salt, sizeof(okm), sizeof(prk), sizeof(salt)))
+	ret = lodp_expand(okm, prk, salt, sizeof(okm), sizeof(prk),
+	    sizeof(salt));
+	if (ret)
 		goto out;
 	memcpy(sym_key->mac_key.mac_key, okm, LODP_MAC_KEY_LEN);
 	memcpy(sym_key->bulk_key.bulk_key, okm + LODP_MAC_KEY_LEN,
 	    LODP_BULK_KEY_LEN);
-	ret = 0;
 
 out:
 	lodp_memwipe(prk, sizeof(prk));
@@ -447,7 +452,7 @@ lodp_derive_sessionkeys(lodp_symmetric_key *init_key, lodp_symmetric_key
 	};
 	const uint8_t *prk, *p;
 	uint8_t okm[2 * (LODP_MAC_KEY_LEN + LODP_BULK_KEY_LEN)];
-	int ret = LODP_ERR_INVAL;
+	int ret;
 
 	assert(NULL != init_key);
 	assert(NULL != resp_key);
@@ -467,8 +472,9 @@ lodp_derive_sessionkeys(lodp_symmetric_key *init_key, lodp_symmetric_key
 	 */
 
 	prk = shared_secret;
-	if (lodp_expand(okm, prk, salt, sizeof(okm), shared_secret_len,
-	    sizeof(salt)))
+	ret = lodp_expand(okm, prk, salt, sizeof(okm), shared_secret_len,
+	    sizeof(salt));
+	if (ret)
 		goto out;
 	p = okm;
 	memcpy(init_key->mac_key.mac_key, p, LODP_MAC_KEY_LEN);
@@ -479,7 +485,6 @@ lodp_derive_sessionkeys(lodp_symmetric_key *init_key, lodp_symmetric_key
 	p += LODP_MAC_KEY_LEN;
 	memcpy(resp_key->bulk_key.bulk_key, p, LODP_BULK_KEY_LEN);
 	p += LODP_BULK_KEY_LEN;
-	ret = 0;
 
 out:
 	lodp_memwipe(okm, sizeof(okm));
@@ -556,7 +561,7 @@ curve25519_generate_pubkey(lodp_ecdh_keypair *keypair)
 	curve25519_donna(keypair->public_key.public_key,
 	    keypair->private_key.private_key, basepoint);
 
-	return (0);
+	return (LODP_ERR_OK);
 }
 
 
@@ -590,12 +595,13 @@ lodp_expand(uint8_t *okm, const uint8_t *prk, const uint8_t *info,
 	uint8_t *p;
 	size_t N;
 	uint8_t i;
-	int ret = LODP_ERR_INVAL;
+	int ret;
 
 	N = (okm_len + BLAKE2S_OUTBYTES - 1) / BLAKE2S_OUTBYTES;
 	if (N > 255)
 		return (LODP_ERR_INVAL);
 
+	ret = LODP_ERR_INVAL;
 	p = okm;
 	for (i = 1; i <= N; i++) {
 		size_t to_copy = (okm_len > sizeof(T)) ? sizeof(T) : okm_len;
@@ -614,7 +620,7 @@ lodp_expand(uint8_t *okm, const uint8_t *prk, const uint8_t *info,
 		p += to_copy;
 		okm_len -= to_copy;
 	}
-	ret = 0;
+	ret = LODP_ERR_OK;
 
 out:
 	lodp_memwipe(&state, sizeof(state));
