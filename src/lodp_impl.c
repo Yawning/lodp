@@ -60,6 +60,9 @@ typedef struct lodp_bufpool_s {
 static lodp_bufpool bufpool;
 static int bufpool_initialized;
 
+static int logging_unsafe;
+static lodp_log_level log_level;
+
 
 static int bufpool_grow(lodp_bufpool *pool);
 
@@ -167,7 +170,17 @@ bufpool_grow(lodp_bufpool *pool)
 		pool->nr_available++;
 	}
 
-	return (0);
+	return (LODP_ERR_OK);
+}
+
+
+int
+lodp_log_init(int unsafe_logging, lodp_log_level level)
+{
+	logging_unsafe = unsafe_logging;
+	log_level = level;
+
+	return (LODP_ERR_OK);
 }
 
 
@@ -178,7 +191,7 @@ lodp_log(const lodp_endpoint *ep, lodp_log_level level, const char *fmt, ...)
 	va_list args;
 	int ret;
 
-	if ((NULL == ep->callbacks.log_fn) || (level > ep->log_level))
+	if ((NULL == ep->callbacks.log_fn) || (level > log_level))
 		return;
 
 	/*
@@ -206,8 +219,7 @@ lodp_session_log(const lodp_session *session, lodp_log_level level, const char
 	va_list args;
 	int ret;
 
-	if ((NULL == session->ep->callbacks.log_fn) || (level >
-		    session->ep->log_level))
+	if ((NULL == session->ep->callbacks.log_fn) || (level > log_level))
 		return;
 
 	/*
@@ -229,7 +241,7 @@ lodp_session_log(const lodp_session *session, lodp_log_level level, const char
 
 
 void
-lodp_straddr(const struct sockaddr *addr, char *buf, size_t len, int unsafe)
+lodp_straddr(const struct sockaddr *addr, char *buf, size_t len)
 {
 	char addrstr[INET6_ADDRSTRLEN];
 	uint16_t port;
@@ -238,7 +250,7 @@ lodp_straddr(const struct sockaddr *addr, char *buf, size_t len, int unsafe)
 	assert(NULL != buf);
 	assert(LODP_ADDRSTRLEN == len);
 
-	if (!unsafe) {
+	if (!logging_unsafe) {
 		snprintf(buf, len, "[scrubbed]");
 		return;
 	} else if (AF_INET == addr->sa_family) {

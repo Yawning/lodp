@@ -143,7 +143,7 @@ main(int argc, char *argv[])
 	client_addr.sin_port = htons(2323);
 	client_addr.sin_addr.s_addr = htonl(0x7f000001);        /* 127.0.0.1 */
 
-	ret = lodp_init();
+	ret = lodp_init(1, LODP_LOG_DEBUG);
 	if (ret) {
 		fprintf(stderr, "lodp_init(): %d\n", ret);
 		goto out;
@@ -161,13 +161,12 @@ main(int argc, char *argv[])
 	}
 
 	/* Set up the server endpoint */
-	ret = lodp_endpoint_bind(&server_ep, NULL, &s_test_cbs, 1);
+	ret = lodp_endpoint_bind(&server_ep, NULL, &s_test_cbs);
 	if (ret) {
 		fprintf(stderr,
 		    "ERROR: Failed to initialize server endpoint (%d)\n", ret);
 		goto out;
 	}
-	lodp_endpoint_set_log_level(server_ep, LODP_LOG_DEBUG);
 
 	ret = lodp_endpoint_listen(server_ep, server_priv_key,
 		sizeof(server_priv_key), node_id, sizeof(node_id));
@@ -178,13 +177,12 @@ main(int argc, char *argv[])
 	}
 
 	/* Set up the client endpoint */
-	ret = lodp_endpoint_bind(&client_ep, NULL, &c_test_cbs, 1);
+	ret = lodp_endpoint_bind(&client_ep, NULL, &c_test_cbs);
 	if (ret) {
 		fprintf(stderr,
 		    "ERROR: Failed to initialize client endpoint (%d)\n", ret);
 		goto out_serv;
 	}
-	lodp_endpoint_set_log_level(client_ep, LODP_LOG_DEBUG);
 
 	/* Connect (Client->Server) */
 	ret = lodp_connect(&client_session, NULL, client_ep,

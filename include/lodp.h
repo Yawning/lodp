@@ -29,6 +29,7 @@
 
 
 #include <netinet/in.h>
+
 #include <stdint.h>
 
 #ifndef _LODP_H_
@@ -47,10 +48,7 @@
  */
 
 
-/*
- * Various lengths.  Needs to be kept in sync with lodp_crypto.h, but don't want
- * to expose that to the user.
- */
+/* Key lengths */
 #define LODP_PRIVATE_KEY_LEN	32
 #define LODP_PUBLIC_KEY_LEN	32
 
@@ -210,7 +208,7 @@ typedef struct {
 	uint64_t	tx_bytes;               /* Total bytes sent */
 	uint64_t	rx_bytes;               /* Total bytes received */
 
-	/* TODO: Add various protocol related stats */
+	/* Evil packets that got dropped */
 	uint64_t	rx_undersized;          /* Rx undersized packets */
 	uint64_t	rx_oversized;           /* Rx oversized packets */
 } lodp_endpoint_stats;
@@ -230,14 +228,14 @@ typedef struct {
 } lodp_session_stats;
 
 
-int lodp_init(void);
+int lodp_init(int unsafe_logging, lodp_log_level log_level);
 void lodp_term(void);
 
 int lodp_generate_keypair(uint8_t *pub_key, size_t *pub_key_len, uint8_t *
     priv_key, size_t *priv_key_len);
 
 int lodp_endpoint_bind(lodp_endpoint **eep, const void *ctxt,
-    const lodp_callbacks *callbacks, int unsafe_logging);
+    const lodp_callbacks *callbacks);
 int lodp_endpoint_listen(lodp_endpoint *ep, const uint8_t *priv_key,
     size_t priv_key_len, const uint8_t *node_id, size_t node_id_len);
 int lodp_endpoint_set_context(lodp_endpoint *ep, void *ctxt);

@@ -31,6 +31,7 @@
 #include <sys/tree.h>
 #include <sys/queue.h>
 #include <sys/socket.h>
+
 #include <stdint.h>
 
 #include "lodp.h"
@@ -52,6 +53,7 @@ struct lodp_endpoint_s {
 	lodp_endpoint_stats	stats;
 
 	/* Things used for session initialization */
+	int			has_intro_keys;
 	lodp_ecdh_keypair	intro_ecdh_keypair;
 	lodp_symmetric_key	intro_sym_keys;
 	uint8_t *		node_id;
@@ -69,9 +71,6 @@ struct lodp_endpoint_s {
 #endif
 
 	/* Endpoint configuration */
-	int			has_intro_keys;
-	int			use_unsafe_logging;
-	lodp_log_level		log_level;
 
 	/* Connection table */
 	RB_HEAD(lodp_ep_sessions, lodp_session_s) sessions;
@@ -130,13 +129,6 @@ struct lodp_session_s {
 };
 
 
-int lodp_session_init(lodp_session **session, const void *ctxt,
-    lodp_endpoint *ep, const struct sockaddr *addr, size_t addr_len,
-    const uint8_t *pub_key, size_t pub_key_len, const uint8_t *node_id,
-    size_t node_id_len, int is_initiator);
-void lodp_session_destroy(lodp_session *session);
-
-
 /*
  * Buffer management
  *
@@ -178,9 +170,18 @@ void lodp_bufpool_free(void);
 
 
 /* Logging helper routines */
+int lodp_log_init(int unsafe_logging, lodp_log_level level);
 void lodp_log(const lodp_endpoint *ep, lodp_log_level level, const char *fmt, ...);
 void lodp_session_log(const lodp_session *session, lodp_log_level level, const char *fmt, ...);
-void lodp_straddr(const struct sockaddr *addr, char *buf, size_t len, int unsafe);
+void lodp_straddr(const struct sockaddr *addr, char *buf, size_t len);
+
+
+/* TCB management that lives in lodp.c but isn't intended for users */
+int lodp_session_init(lodp_session **session, const void *ctxt,
+    lodp_endpoint *ep, const struct sockaddr *addr, size_t addr_len,
+    const uint8_t *pub_key, size_t pub_key_len, const uint8_t *node_id,
+    size_t node_id_len, int is_initiator);
+void lodp_session_destroy(lodp_session *session);
 
 
 #endif

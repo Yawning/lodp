@@ -58,7 +58,7 @@ RB_GENERATE(lodp_ep_sessions, lodp_session_s, entry, session_cmp);
 
 
 int
-lodp_init(void)
+lodp_init(int unsafe_logging, lodp_log_level log_level)
 {
 	int ret;
 
@@ -67,8 +67,15 @@ lodp_init(void)
 	if (ret)
 		return (ret);
 
-	/* Intialize the global state */
-	return (lodp_bufpool_init());
+	/* Initialize the buffer pool */
+	ret = lodp_bufpool_init();
+	if (ret)
+		return (ret);
+
+	/* Initialize the logging code */
+	ret = lodp_log_init(unsafe_logging, log_level);
+
+	return (ret);
 }
 
 
@@ -87,8 +94,8 @@ lodp_term(void)
 
 
 int
-lodp_endpoint_bind(lodp_endpoint **eep, const void *ctxt, const lodp_callbacks *callbacks,
-    int unsafe_logging)
+lodp_endpoint_bind(lodp_endpoint **eep, const void *ctxt,
+    const lodp_callbacks *callbacks)
 {
 	lodp_endpoint *ep;
 
@@ -105,8 +112,6 @@ lodp_endpoint_bind(lodp_endpoint **eep, const void *ctxt, const lodp_callbacks *
 		return (LODP_ERR_NOBUFS);
 
 	ep->ctxt = (void *)ctxt;
-	ep->use_unsafe_logging = unsafe_logging;
-	ep->log_level = LODP_LOG_WARN;
 	memcpy(&ep->callbacks, callbacks, sizeof(ep->callbacks));
 #ifdef TINFOIL
 	ep->iv_filter = lodp_bf_init(23, 0.01); /* 875175 entries */
@@ -218,17 +223,6 @@ lodp_endpoint_get_context(const lodp_endpoint *ep, void **ctxt)
 		return (LODP_ERR_INVAL);
 
 	*ctxt = ep->ctxt;
-	return (LODP_ERR_OK);
-}
-
-
-int
-lodp_endpoint_set_log_level(lodp_endpoint *ep, lodp_log_level level)
-{
-	if (NULL == ep)
-		return (LODP_ERR_INVAL);
-
-	ep->log_level = level;
 	return (LODP_ERR_OK);
 }
 
@@ -440,8 +434,7 @@ lodp_session_init(lodp_session **ssession, const void *ctxt, lodp_endpoint *ep,
 	session->peer_addr_len = addr_len;
 	session->peer_addr_hash = lodp_hash(&session->peer_addr, addr_len);
 	lodp_straddr((struct sockaddr *)&session->peer_addr,
-	    session->peer_addr_str, sizeof(session->peer_addr_str),
-	    ep->use_unsafe_logging);
+	    session->peer_addr_str, sizeof(session->peer_addr_str));
 
 	/* Generate the Ephemeral Curve25519 keypair */
 	ret = lodp_gen_keypair(&session->session_ecdh_keypair, NULL, 0);
