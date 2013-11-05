@@ -161,30 +161,38 @@ main(int argc, char *argv[])
 	}
 
 	/* Set up the server endpoint */
-	server_ep = lodp_endpoint_bind(NULL, &s_test_cbs, server_priv_key,
-		sizeof(server_priv_key), node_id, sizeof(node_id), 1);
-	if (NULL == server_ep) {
-		fprintf(stderr, "ERROR: Failed to initialize server endpoint\n");
+	ret = lodp_endpoint_bind(&server_ep, NULL, &s_test_cbs, 1);
+	if (ret) {
+		fprintf(stderr,
+		    "ERROR: Failed to initialize server endpoint (%d)\n", ret);
 		goto out;
 	}
 	lodp_endpoint_set_log_level(server_ep, LODP_LOG_DEBUG);
 
+	ret = lodp_endpoint_listen(server_ep, server_priv_key,
+		sizeof(server_priv_key), node_id, sizeof(node_id));
+	if (ret) {
+		fprintf(stderr,
+		    "ERROR: Failed to listen on server endpoint (%d)\n", ret);
+		goto out;
+	}
+
 	/* Set up the client endpoint */
-	client_ep = lodp_endpoint_bind(NULL, &c_test_cbs, NULL, 0, NULL, 0, 1);
-	if (NULL == client_ep) {
-		fprintf(stderr, "ERROR: Failed to initialize client endpoint\n");
+	ret = lodp_endpoint_bind(&client_ep, NULL, &c_test_cbs, 1);
+	if (ret) {
+		fprintf(stderr,
+		    "ERROR: Failed to initialize client endpoint (%d)\n", ret);
 		goto out_serv;
 	}
 	lodp_endpoint_set_log_level(client_ep, LODP_LOG_DEBUG);
 
-	/*
-	 * Connect (Client->Server)
-	 */
-	client_session = lodp_connect(NULL, client_ep, (struct sockaddr *)
-		&server_addr, sizeof(server_addr), server_pub_key,
-		sizeof(server_pub_key), node_id, sizeof(node_id));
-	if (NULL == client_session) {
-		fprintf(stderr, "ERROR: Failed to connect to server\n");
+	/* Connect (Client->Server) */
+	ret = lodp_connect(&client_session, NULL, client_ep,
+		(struct sockaddr *)&server_addr, sizeof(server_addr),
+		server_pub_key, sizeof(server_pub_key), node_id, sizeof(node_id));
+	if (ret) {
+		fprintf(stderr, "ERROR: Failed to connect to server (%d)\n",
+		    ret);
 		goto out_client;
 	}
 
@@ -355,6 +363,7 @@ s_on_recv_fn(const lodp_session *session, const void *buf, size_t len)
 
 	return (0);
 }
+
 
 static void
 s_on_rekey_fn(const lodp_session *session, int status)

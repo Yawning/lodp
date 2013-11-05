@@ -130,8 +130,8 @@ struct lodp_session_s {
 };
 
 
-lodp_session *lodp_session_init(const void *ctxt, lodp_endpoint *ep,
-    const struct sockaddr *addr, size_t addr_len,
+int lodp_session_init(lodp_session **session, const void *ctxt,
+    lodp_endpoint *ep, const struct sockaddr *addr, size_t addr_len,
     const uint8_t *pub_key, size_t pub_key_len, const uint8_t *node_id,
     size_t node_id_len, int is_initiator);
 void lodp_session_destroy(lodp_session *session);

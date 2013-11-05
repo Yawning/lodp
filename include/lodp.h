@@ -57,14 +57,16 @@
 
 /* Error codes */
 #define LODP_ERR			0x00100000
+#define LODP_ERR_OK			0                       /* Success */
 #define LODP_ERR_INVAL			(-(LODP_ERR | 1))       /* Invalid arguments */
 #define LODP_ERR_NOBUFS			(-(LODP_ERR | 2))       /* Out of memory */
-#define LODP_ERR_AGAIN			(-(LODP_ERR | 3))       /* Would block */
-#define LODP_ERR_ISCONN			(-(LODP_ERR | 4))       /* Already connected */
-#define LODP_ERR_NOTCONN		(-(LODP_ERR | 5))       /* Not connected */
-#define LODP_ERR_MSGSIZE		(-(LODP_ERR | 6))       /* Message too big */
-#define LODP_ERR_AFNOTSUPPORT		(-(LODP_ERR | 7))       /* Address family */
-#define LODP_ERR_CONNABORTED		(-(LODP_ERR | 8))       /* Connection aborted */
+#define LODP_ERR_BADFD			(-(LODP_ERR | 3))       /* Bad endpoint */
+#define LODP_ERR_AGAIN			(-(LODP_ERR | 4))       /* Would block */
+#define LODP_ERR_ISCONN			(-(LODP_ERR | 5))       /* Already connected */
+#define LODP_ERR_NOTCONN		(-(LODP_ERR | 6))       /* Not connected */
+#define LODP_ERR_MSGSIZE		(-(LODP_ERR | 7))       /* Message too big */
+#define LODP_ERR_AFNOTSUPPORT		(-(LODP_ERR | 8))       /* Address family */
+#define LODP_ERR_CONNABORTED		(-(LODP_ERR | 9))       /* Connection aborted */
 
 #define LODP_ERR_NOT_INITIATOR		(-(LODP_ERR | 10))
 #define LODP_ERR_NOT_RESPONDER		(-(LODP_ERR | 11))
@@ -87,10 +89,10 @@ typedef struct lodp_session_s		lodp_session;   /* Session */
 
 /* Log level passed to the logging callback */
 typedef enum {
-	LODP_LOG_ERROR = 0,	/* error condition */
-	LODP_LOG_WARN,		/* warning message */
-	LODP_LOG_INFO,		/* informational message */
-	LODP_LOG_DEBUG,		/* debug-level messages */
+	LODP_LOG_ERROR = 0,     /* error condition */
+	LODP_LOG_WARN,          /* warning message */
+	LODP_LOG_INFO,          /* informational message */
+	LODP_LOG_DEBUG,         /* debug-level messages */
 } lodp_log_level;
 
 
@@ -209,6 +211,8 @@ typedef struct {
 	uint64_t	rx_bytes;               /* Total bytes received */
 
 	/* TODO: Add various protocol related stats */
+	uint64_t	rx_undersized;          /* Rx undersized packets */
+	uint64_t	rx_oversized;           /* Rx oversized packets */
 } lodp_endpoint_stats;
 
 
@@ -232,22 +236,23 @@ void lodp_term(void);
 int lodp_generate_keypair(uint8_t *pub_key, size_t *pub_key_len, uint8_t *
     priv_key, size_t *priv_key_len);
 
-lodp_endpoint *lodp_endpoint_bind(void *ctxt, const lodp_callbacks
-    *callbacks, const uint8_t *priv_key, size_t priv_key_len, const uint8_t
-    *node_id, size_t node_id_len, int unsafe_logging);
+int lodp_endpoint_bind(lodp_endpoint **eep, const void *ctxt,
+    const lodp_callbacks *callbacks, int unsafe_logging);
+int lodp_endpoint_listen(lodp_endpoint *ep, const uint8_t *priv_key,
+    size_t priv_key_len, const uint8_t *node_id, size_t node_id_len);
 int lodp_endpoint_set_context(lodp_endpoint *ep, void *ctxt);
 int lodp_endpoint_get_context(const lodp_endpoint *ep, void **ctxt);
 int lodp_endpoint_set_log_level(lodp_endpoint *ep, lodp_log_level level);
 int lodp_endpoint_get_stats(const lodp_endpoint *ep, lodp_endpoint_stats
     *stats);
 ssize_t lodp_endpoint_get_mss(const lodp_endpoint *ep);
-void lodp_endpoint_unbind(lodp_endpoint *ep);
+int lodp_endpoint_unbind(lodp_endpoint *ep);
 int lodp_endpoint_on_packet(lodp_endpoint *ep, const uint8_t *buf, size_t len,
     const struct sockaddr *addr, socklen_t addr_len);
 
-lodp_session *lodp_connect(const void *ctxt, lodp_endpoint *ep, const struct
-    sockaddr *addr, size_t addr_len, const uint8_t *pub_key, size_t
-    pub_key_len, const uint8_t *node_id, size_t node_id_len);
+int lodp_connect(lodp_session **ssession, const void *ctxt, lodp_endpoint *ep,
+    const struct sockaddr *addr, socklen_t addr_len, const uint8_t *pubkey,
+    size_t pub_key_len, const uint8_t *node_id, size_t node_id_len);
 int lodp_session_set_context(lodp_session *session, void *ctxt);
 int lodp_session_get_context(const lodp_session *session, void **ctxt);
 int lodp_session_get_stats(const lodp_session *session, lodp_session_stats
@@ -255,7 +260,7 @@ int lodp_session_get_stats(const lodp_session *session, lodp_session_stats
 int lodp_handshake(lodp_session *session);
 int lodp_send(lodp_session *session, const void *buf, size_t len);
 int lodp_rekey(lodp_session *session);
-void lodp_close(lodp_session *session);
+int lodp_close(lodp_session *session);
 
 
 #endif

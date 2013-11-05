@@ -1168,12 +1168,10 @@ on_handshake_pkt(lodp_endpoint *ep, lodp_session *session, const
 	}
 
 	/* Generate a TCB */
-	session = lodp_session_init(NULL, ep, addr, addr_len, hs_pkt->public_key,
-		sizeof(hs_pkt->public_key), NULL, 0, 0);
-	if (NULL == session) {
-		ret = LODP_ERR_NOBUFS;
+	ret = lodp_session_init(&session, NULL, ep, addr, addr_len,
+	    hs_pkt->public_key, sizeof(hs_pkt->public_key), NULL, 0, 0);
+	if (ret)
 		goto out_wipe;
-	}
 
 	/* Save the cookie */
 	session->cookie = calloc(1, COOKIE_LEN);

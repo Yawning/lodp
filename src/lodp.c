@@ -86,33 +86,25 @@ lodp_term(void)
 }
 
 
-lodp_endpoint *
-lodp_endpoint_bind(void *ctxt, const lodp_callbacks *callbacks,
-    const uint8_t *priv_key, size_t priv_key_len, const uint8_t *node_id, size_t
-    node_id_len, int unsafe_logging)
+int
+lodp_endpoint_bind(lodp_endpoint **eep, const void *ctxt, const lodp_callbacks *callbacks,
+    int unsafe_logging)
 {
 	lodp_endpoint *ep;
 
-	/* Make sure that callbacks are set */
-	if (NULL == callbacks)
-		return (NULL);
+	if ((NULL == callbacks) || (NULL == eep))
+		return (LODP_ERR_INVAL);
 
+	/* A certain number of callbacks are mandetory */
 	if ((NULL == callbacks->sendto_fn) || (NULL == callbacks->on_recv_fn) ||
 	    (NULL == callbacks->on_close_fn) || (NULL == callbacks->on_rekey_fn))
-		return (NULL);
-
-	if ((NULL == priv_key) && (NULL == callbacks->on_connect_fn))
-		return (NULL);
-
-	if ((NULL != priv_key) && ((NULL == callbacks->on_accept_fn) || (NULL ==
-			    node_id) || (0 == node_id_len)))
-		return (NULL);
+		return (LODP_ERR_INVAL);
 
 	ep = calloc(1, sizeof(*ep));
 	if (NULL == ep)
-		return (NULL);
+		return (LODP_ERR_NOBUFS);
 
-	ep->ctxt = ctxt;
+	ep->ctxt = (void *)ctxt;
 	ep->use_unsafe_logging = unsafe_logging;
 	ep->log_level = LODP_LOG_WARN;
 	memcpy(&ep->callbacks, callbacks, sizeof(ep->callbacks));
@@ -120,15 +112,31 @@ lodp_endpoint_bind(void *ctxt, const lodp_callbacks *callbacks,
 	ep->iv_filter = lodp_bf_init(23, 0.01); /* 875175 entries */
 	if (NULL == ep->iv_filter) {
 		free_endpoint(ep);
-		return (NULL);
+		return (LODP_ERR_NOBUFS);
 	}
 #endif
 	RB_INIT(&ep->sessions);
 
-	/* Outgoing only endpoints don't need further initialization */
-	if (NULL == priv_key) {
-		lodp_log(ep, LODP_LOG_INFO, "Client Endpoint Bound", ep);
-		return (ep);
+	lodp_log(ep, LODP_LOG_INFO, "bind(): Bound");
+
+	*eep = ep;
+
+	return (LODP_ERR_OK);
+}
+
+
+int
+lodp_endpoint_listen(lodp_endpoint *ep, const uint8_t *priv_key,
+    size_t priv_key_len, const uint8_t *node_id, size_t node_id_len)
+{
+	int ret;
+
+	if ((NULL == ep) || (NULL == priv_key) || (NULL == node_id))
+		return (LODP_ERR_INVAL);
+
+	if (NULL == ep->callbacks.on_accept_fn) {
+		lodp_log(ep, LODP_LOG_ERROR, "listen(): on_accept_fn == NULL");
+		return (LODP_ERR_BADFD);
 	}
 
 	/* Endpoint that supports incoming connections */
@@ -137,23 +145,29 @@ lodp_endpoint_bind(void *ctxt, const lodp_callbacks *callbacks,
 	/* Save the node id */
 	ep->node_id = calloc(1, node_id_len);
 	if (NULL == ep->node_id) {
+		lodp_log(ep, LODP_LOG_ERROR, "listen(): OOM saving node_id");
 		free_endpoint(ep);
-		return (NULL);
+		return (LODP_ERR_NOBUFS);
 	}
 	ep->node_id_len = node_id_len;
 	memcpy(ep->node_id, node_id, node_id_len);
 
 	/* Initialize Curve25519 keys */
-	if (lodp_gen_keypair(&ep->intro_ecdh_keypair, priv_key, priv_key_len)) {
+	ret = lodp_gen_keypair(&ep->intro_ecdh_keypair, priv_key, priv_key_len);
+	if (ret) {
+		lodp_log(ep, LODP_LOG_ERROR,
+		    "listen(): Failed to initalize Host key (%d)", ret);
 		free_endpoint(ep);
-		return (NULL);
+		return (ret);
 	}
 
 	/* Initialize Intro (Stegonographic) MAC/Symetric keys */
-	if (lodp_derive_introkeys(&ep->intro_sym_keys,
-	    &ep->intro_ecdh_keypair.public_key)) {
+	ret = lodp_derive_introkeys(&ep->intro_sym_keys, &ep->intro_ecdh_keypair.public_key);
+	if (ret) {
+		lodp_log(ep, LODP_LOG_ERROR,
+		    "listen(): Failed to derive Stegonographic keys (%d)", ret);
 		free_endpoint(ep);
-		return (NULL);
+		return (ret);
 	}
 
 	/* Generate random secrets for the cookie */
@@ -163,22 +177,26 @@ lodp_endpoint_bind(void *ctxt, const lodp_callbacks *callbacks,
 	/* Initialize the INIT replay filter */
 	ep->init_filter = lodp_bf_init(18, 0.001); /* 18232 entries */
 	if (NULL == ep->init_filter) {
+		lodp_log(ep, LODP_LOG_ERROR,
+		    "listen(): OOM allocating init_filter");
 		free_endpoint(ep);
-		return (NULL);
+		return (LODP_ERR_NOBUFS);
 	}
 
 #ifdef TINFOIL
 	/* Initialize the cookie replay filter */
 	ep->cookie_filter = lodp_bf_init(14, 0.001); /* 1139 entries */
 	if (NULL == ep->cookie_filter) {
+		lodp_log(ep, LODP_LOG_ERROR,
+		    "listen(): OOM allocating cookie_filter");
 		free_endpoint(ep);
-		return (NULL);
+		return (LODP_ERR_NOBUFS);
 	}
 #endif
 
-	lodp_log(ep, LODP_LOG_INFO, "Server Endpoint Bound", ep);
+	lodp_log(ep, LODP_LOG_INFO, "listen(): Listening");
 
-	return (ep);
+	return (LODP_ERR_OK);
 }
 
 
@@ -189,7 +207,7 @@ lodp_endpoint_set_context(lodp_endpoint *ep, void *ctxt)
 		return (LODP_ERR_INVAL);
 
 	ep->ctxt = ctxt;
-	return (0);
+	return (LODP_ERR_OK);
 }
 
 
@@ -200,7 +218,7 @@ lodp_endpoint_get_context(const lodp_endpoint *ep, void **ctxt)
 		return (LODP_ERR_INVAL);
 
 	*ctxt = ep->ctxt;
-	return (0);
+	return (LODP_ERR_OK);
 }
 
 
@@ -211,7 +229,7 @@ lodp_endpoint_set_log_level(lodp_endpoint *ep, lodp_log_level level)
 		return (LODP_ERR_INVAL);
 
 	ep->log_level = level;
-	return (0);
+	return (LODP_ERR_OK);
 }
 
 
@@ -223,7 +241,7 @@ lodp_endpoint_get_stats(const lodp_endpoint *ep, lodp_endpoint_stats *stats)
 
 	memcpy(stats, &ep->stats, sizeof(*ep));
 
-	return (0);
+	return (LODP_ERR_OK);
 }
 
 
@@ -248,9 +266,9 @@ lodp_generate_keypair(uint8_t *pub_key, size_t *pub_key_len, uint8_t *priv_key,
 	if ((NULL == pub_key_len) || (NULL == priv_key_len))
 		return (LODP_ERR_INVAL);
 
-	if ((*pub_key_len >= LODP_PUBLIC_KEY_LEN) && (*priv_key_len >=
-	    LODP_PRIVATE_KEY_LEN) && (NULL != pub_key) && (NULL !=
-	    priv_key)) {
+	if ((*pub_key_len >= LODP_PUBLIC_KEY_LEN) &&
+	    (*priv_key_len >= LODP_PRIVATE_KEY_LEN) && (NULL != pub_key) &&
+	    (NULL != priv_key)) {
 		ret = lodp_gen_keypair(&keypair, NULL, 0);
 		if (!ret) {
 			memcpy(pub_key, keypair.public_key.public_key,
@@ -269,12 +287,13 @@ lodp_generate_keypair(uint8_t *pub_key, size_t *pub_key_len, uint8_t *priv_key,
 }
 
 
-void
+int
 lodp_endpoint_unbind(lodp_endpoint *ep)
 {
 	lodp_session *session, *tmp;
 
-	assert(NULL != ep);
+	if (NULL == ep)
+		return (LODP_ERR_INVAL);
 
 	for (session = RB_MIN(lodp_ep_sessions, &ep->sessions); session != NULL;
 	    session = tmp) {
@@ -282,9 +301,11 @@ lodp_endpoint_unbind(lodp_endpoint *ep)
 		lodp_close(session);
 	}
 
-	lodp_log(ep, LODP_LOG_INFO, "Endpoint Unbound", ep);
+	lodp_log(ep, LODP_LOG_INFO, "unbind(): Unbound");
 
 	free_endpoint(ep);
+
+	return (LODP_ERR_OK);
 }
 
 
@@ -314,13 +335,27 @@ lodp_endpoint_on_packet(lodp_endpoint *ep, const uint8_t *buf, size_t len,
 	 * validated and it has been decrypted.
 	 */
 
-	if ((len < PKT_HDR_LEN) || (len > LODP_MSS))
+	if (len < PKT_HDR_LEN) {
+		lodp_log(ep, LODP_LOG_DEBUG, "on_packet(): Packet too short %d",
+		    len);
+		ep->stats.rx_undersized++;
 		return (LODP_ERR_BAD_PACKET);
+	}
+
+	if (len > LODP_MSS) {
+		lodp_log(ep, LODP_LOG_DEBUG, "on_packet(): Packet too large %d",
+		    len);
+		ep->stats.rx_oversized++;
+		return (LODP_ERR_BAD_PACKET);
+	}
 
 	/* Copy the packet and process it */
 	pkt = lodp_buf_alloc();
-	if (NULL == pkt)
+	if (NULL == pkt) {
+		lodp_log(ep, LODP_LOG_ERROR,
+		    "on_packet(): Failed to allocate packet buffer");
 		return (LODP_ERR_NOBUFS);
+	}
 
 	memcpy(pkt->ciphertext, buf, len);
 	pkt->len = len;
@@ -332,37 +367,49 @@ lodp_endpoint_on_packet(lodp_endpoint *ep, const uint8_t *buf, size_t len,
 }
 
 
-lodp_session *
-lodp_connect(const void *ctxt, lodp_endpoint *ep, const struct sockaddr
-    *addr, size_t addr_len, const uint8_t *pub_key,
+int
+lodp_connect(lodp_session **ssession, const void *ctxt, lodp_endpoint *ep,
+    const struct sockaddr *addr, socklen_t addr_len, const uint8_t *pub_key,
     size_t pub_key_len, const uint8_t *node_id, size_t node_id_len)
 {
-	if ((NULL == ep) || (NULL == addr) || (NULL == pub_key))
-		return (NULL);
+	lodp_session *session;
+	int ret;
 
-	if ((NULL == node_id) || (0 == node_id_len))
-		return (NULL);
+	if ((NULL == ep) || (NULL == addr) || (NULL == pub_key) ||
+	    (NULL == node_id))
+		return (LODP_ERR_INVAL);
 
-	if (LODP_ECDH_PUBLIC_KEY_LEN != pub_key_len)
-		return (NULL);
+	if (NULL == ep->callbacks.on_connect_fn) {
+		lodp_log(ep, LODP_LOG_ERROR, "connect(): on_connect_fn == NULL");
+		return (LODP_ERR_BADFD);
+	}
 
-	if (addr_len > sizeof(struct sockaddr_storage))
-		return (NULL);
+	if ((0 == node_id_len) || (LODP_ECDH_PUBLIC_KEY_LEN != pub_key_len))
+		return (LODP_ERR_INVAL);
 
-	if ((AF_INET != addr->sa_family) && (AF_INET6 != addr->sa_family))
-		return (NULL);
+	if ((addr_len > sizeof(struct sockaddr_storage)) ||
+	    ((AF_INET != addr->sa_family) && (AF_INET6 != addr->sa_family)))
+		return (LODP_ERR_AFNOTSUPPORT);
 
-	return (lodp_session_init(ctxt, ep, addr, addr_len, pub_key,
-		    pub_key_len, node_id, node_id_len, 1));
+	ret = lodp_session_init(&session, ctxt, ep, addr, addr_len, pub_key,
+		pub_key_len, node_id, node_id_len, 1);
+	if (LODP_ERR_OK == ret) {
+		*ssession = session;
+		lodp_log(ep, LODP_LOG_INFO, "connect(): Connecting to peer");
+	}
+
+	return (ret);
 }
 
 
-lodp_session *
-lodp_session_init(const void *ctxt, lodp_endpoint *ep, const struct sockaddr
-    *addr, size_t addr_len, const uint8_t *pub_key, size_t pub_key_len,
-    const uint8_t *node_id, size_t node_id_len, int is_initiator)
+int
+lodp_session_init(lodp_session **ssession, const void *ctxt, lodp_endpoint *ep,
+    const struct sockaddr *addr, size_t addr_len, const uint8_t *pub_key,
+    size_t pub_key_len, const uint8_t *node_id, size_t node_id_len,
+    int is_initiator)
 {
 	lodp_session *session;
+	int ret;
 
 	assert(NULL != ep);
 	assert(NULL != addr);
@@ -373,12 +420,18 @@ lodp_session_init(const void *ctxt, lodp_endpoint *ep, const struct sockaddr
 	 * endpoint
 	 */
 	session = session_find(ep, addr, addr_len);
-	if (NULL != session)
-		return (NULL);
+	if (NULL != session) {
+		lodp_log(ep, LODP_LOG_ERROR,
+		    "_session_init(): Already have a connection to the peer");
+		return (LODP_ERR_ISCONN);
+	}
 
 	session = calloc(1, sizeof(*session));
-	if (NULL == session)
-		return (NULL);
+	if (NULL == session) {
+		lodp_log(ep, LODP_LOG_ERROR,
+		    "_session_init(): OOM allocating tcb");
+		return (LODP_ERR_NOBUFS);
+	}
 
 	session->ctxt = (void *)ctxt;
 	session->ep = ep;
@@ -386,26 +439,33 @@ lodp_session_init(const void *ctxt, lodp_endpoint *ep, const struct sockaddr
 	memcpy(&session->peer_addr, addr, addr_len);
 	session->peer_addr_len = addr_len;
 	session->peer_addr_hash = lodp_hash(&session->peer_addr, addr_len);
-	lodp_straddr((struct sockaddr *)&session->peer_addr, session->peer_addr_str,
-	    sizeof(session->peer_addr_str), ep->use_unsafe_logging);
+	lodp_straddr((struct sockaddr *)&session->peer_addr,
+	    session->peer_addr_str, sizeof(session->peer_addr_str),
+	    ep->use_unsafe_logging);
 
 	/* Generate the Ephemeral Curve25519 keypair */
-	if (lodp_gen_keypair(&session->session_ecdh_keypair, NULL, 0)) {
+	ret = lodp_gen_keypair(&session->session_ecdh_keypair, NULL, 0);
+	if (ret) {
+		lodp_log(ep, LODP_LOG_ERROR,
+		    "_session_init(): Failed to generate session key (%d)",
+		    ret);
 		free_session(session);
-		return (NULL);
+		return (ret);
 	}
 
 	/* Store the peer's public key */
-	if (lodp_gen_pubkey(&session->remote_public_key, pub_key, pub_key_len)) {
+	ret = lodp_gen_pubkey(&session->remote_public_key, pub_key,
+		pub_key_len);
+	if (ret) {
+		lodp_log(ep, LODP_LOG_ERROR,
+		    "_session_init(): Failed to save peer public key (%d)",
+		    ret);
 		free_session(session);
-		return (NULL);
+		return (ret);
 	}
 
 	if (!is_initiator) {
-		/*
-		 * The rest of the things are taken care of by the handshake
-		 * code
-		 */
+		/* Responder side is done */
 		session->state = STATE_ESTABLISHED;
 		goto add_and_return;
 	}
@@ -416,8 +476,9 @@ lodp_session_init(const void *ctxt, lodp_endpoint *ep, const struct sockaddr
 
 	session->peer_node_id = calloc(1, node_id_len);
 	if (NULL == session->peer_node_id) {
+		lodp_log(ep, LODP_LOG_ERROR, "connect(): OOM saving node_id");
 		free_session(session);
-		return (NULL);
+		return (LODP_ERR_NOBUFS);
 	}
 	session->peer_node_id_len = node_id_len;
 	memcpy(session->peer_node_id, node_id, node_id_len);
@@ -426,21 +487,23 @@ lodp_session_init(const void *ctxt, lodp_endpoint *ep, const struct sockaddr
 	session->is_initiator = 1;
 
 	/* Derive the remote peer's intro keys */
-	if (lodp_derive_introkeys(&session->tx_key,
-	    &session->remote_public_key)) {
+	ret = lodp_derive_introkeys(&session->tx_key, &session->remote_public_key);
+	if (ret) {
+		lodp_log(ep, LODP_LOG_ERROR,
+		    "connect(): Failed to derive peer Stegonographic keys (%d)",
+		    ret);
 		free_session(session);
-		return (NULL);
+		return (ret);
 	}
 
 	/* Generate temporary stegonographic keys for the handshake */
 	lodp_rand_bytes(&session->rx_key.mac_key, sizeof(session->rx_key.mac_key));
 	lodp_rand_bytes(&session->rx_key.bulk_key, sizeof(session->rx_key.bulk_key));
 
-	lodp_session_log(session, LODP_LOG_INFO, "Client Session Initialized");
-
 add_and_return:
 	RB_INSERT(lodp_ep_sessions, &ep->sessions, session);
-	return (session);
+	*ssession = session;
+	return (LODP_ERR_OK);
 }
 
 
@@ -462,7 +525,7 @@ lodp_session_set_context(lodp_session *session, void *ctxt)
 		return (LODP_ERR_INVAL);
 
 	session->ctxt = ctxt;
-	return (0);
+	return (LODP_ERR_OK);
 }
 
 
@@ -473,7 +536,7 @@ lodp_session_get_context(const lodp_session *session, void **ctxt)
 		return (LODP_ERR_INVAL);
 
 	*ctxt = session->ctxt;
-	return (0);
+	return (LODP_ERR_OK);
 }
 
 
@@ -485,7 +548,7 @@ lodp_session_get_stats(const lodp_session *session, lodp_session_stats *stats)
 
 	memcpy(stats, &session->stats, sizeof(*stats));
 
-	return (0);
+	return (LODP_ERR_OK);
 }
 
 
@@ -571,16 +634,19 @@ lodp_rekey(lodp_session *session)
 }
 
 
-void
+int
 lodp_close(lodp_session *session)
 {
-	assert(NULL != session);
+	if (NULL == session)
+		return (LODP_ERR_INVAL);
 
 	session->ep->callbacks.on_close_fn(session);
 
-	lodp_session_log(session, LODP_LOG_INFO, "Session Closed");
+	lodp_session_log(session, LODP_LOG_INFO, "close(): Closed");
 
 	lodp_session_destroy(session);
+
+	return (LODP_ERR_OK);
 }
 
 
@@ -607,8 +673,7 @@ session_cmp(struct lodp_session_s *e1, struct lodp_session_s *e2)
 
 
 static inline lodp_session *
-session_find(lodp_endpoint *ep, const struct sockaddr *addr,
-    socklen_t addr_len)
+session_find(lodp_endpoint *ep, const struct sockaddr *addr, socklen_t addr_len)
 {
 	lodp_session find;
 
