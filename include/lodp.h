@@ -32,6 +32,7 @@
 
 #include <stdint.h>
 
+
 #ifndef _LODP_H_
 #define _LODP_H_
 
@@ -208,9 +209,18 @@ typedef struct {
 	uint64_t	tx_bytes;               /* Total bytes sent */
 	uint64_t	rx_bytes;               /* Total bytes received */
 
-	/* Evil packets that got dropped */
-	uint64_t	rx_undersized;          /* Rx undersized packets */
-	uint64_t	rx_oversized;           /* Rx oversized packets */
+	/* Receive errors (All in # of packets) */
+	uint64_t	rx_undersized;          /* Undersized packets */
+	uint64_t	rx_oversized;           /* Oversized packets */
+	uint64_t	rx_invalid_mac;         /* Invalid MAC */
+	uint64_t	rx_duplicate_iv;        /* Duplicate IV */
+	uint64_t	rx_invalid_hdr;         /* Invalid header */
+	uint64_t	rx_invalid_state;       /* Invalid type for state */
+
+	uint64_t	rx_invalid_seq_nr;      /* Invalid sequence number */
+	uint64_t	rx_replayed_init;       /* Replayed INIT packets */
+	uint64_t	rx_invalid_cookie;      /* Invalid HANDSHAKE cookie */
+	uint64_t	rx_duplicate_cookie;    /* Duplicated cookie */
 } lodp_endpoint_stats;
 
 

@@ -212,7 +212,37 @@ lodp_log(const lodp_endpoint *ep, lodp_log_level level, const char *fmt, ...)
 
 
 void
-lodp_session_log(const lodp_session *session, lodp_log_level level, const char
+lodp_log_addr(const lodp_endpoint *ep, lodp_log_level level, const struct sockaddr
+    *addr, const char *fmt, ...)
+{
+	char addrstr[LODP_ADDRSTRLEN];
+	char msg[MAX_LOG_LEN];
+	va_list args;
+	int ret;
+
+	if ((NULL == ep->callbacks.log_fn) || (level > log_level))
+		return;
+
+	/*
+	 * Prefix the log message with useful information
+	 * "EndpointHandle - (Addr:Port): "
+	 */
+
+	lodp_straddr(addr, addrstr, sizeof(addrstr));
+	ret = snprintf(msg, sizeof(msg), "%p - (%s): ", ep, addrstr);
+	assert(ret >= 0);
+
+	va_start(args, fmt);
+	ret = vsnprintf(msg + ret, sizeof(msg) - ret, fmt, args);
+	if (ret >= 0)
+		ep->callbacks.log_fn(ep, level, msg);
+	lodp_memwipe(msg, sizeof(msg));
+	va_end(args);
+}
+
+
+void
+lodp_log_session(const lodp_session *session, lodp_log_level level, const char
     *fmt, ...)
 {
 	char msg[MAX_LOG_LEN];

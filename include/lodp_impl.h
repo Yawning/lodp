@@ -172,7 +172,9 @@ void lodp_bufpool_free(void);
 /* Logging helper routines */
 int lodp_log_init(int unsafe_logging, lodp_log_level level);
 void lodp_log(const lodp_endpoint *ep, lodp_log_level level, const char *fmt, ...);
-void lodp_session_log(const lodp_session *session, lodp_log_level level, const char *fmt, ...);
+void lodp_log_addr(const lodp_endpoint *ep, lodp_log_level level,
+    const struct sockaddr *addr, const char *fmt, ...);
+void lodp_log_session(const lodp_session *session, lodp_log_level level, const char *fmt, ...);
 void lodp_straddr(const struct sockaddr *addr, char *buf, size_t len);
 
 

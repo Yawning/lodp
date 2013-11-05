@@ -330,18 +330,20 @@ lodp_endpoint_on_packet(lodp_endpoint *ep, const uint8_t *buf, size_t len,
 	 */
 
 	if (len < PKT_HDR_LEN) {
-		lodp_log(ep, LODP_LOG_DEBUG, "on_packet(): Packet too short %d",
-		    len);
+		lodp_log_addr(ep, LODP_LOG_DEBUG, addr,
+		    "on_packet(): Packet too short %d bytes", len);
 		ep->stats.rx_undersized++;
 		return (LODP_ERR_BAD_PACKET);
 	}
 
 	if (len > LODP_MSS) {
-		lodp_log(ep, LODP_LOG_DEBUG, "on_packet(): Packet too large %d",
-		    len);
+		lodp_log_addr(ep, LODP_LOG_DEBUG, addr,
+		    "on_packet(): Packet too large %dbytes ", len);
 		ep->stats.rx_oversized++;
 		return (LODP_ERR_BAD_PACKET);
 	}
+
+	lodp_log_addr(ep, LODP_LOG_DEBUG, addr, "on_packet(): %d bytes", len);
 
 	/* Copy the packet and process it */
 	pkt = lodp_buf_alloc();
@@ -635,7 +637,7 @@ lodp_close(lodp_session *session)
 
 	session->ep->callbacks.on_close_fn(session);
 
-	lodp_session_log(session, LODP_LOG_INFO, "close(): Closed");
+	lodp_log_session(session, LODP_LOG_INFO, "close(): Closed");
 
 	lodp_session_destroy(session);
 
