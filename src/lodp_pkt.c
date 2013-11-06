@@ -175,11 +175,6 @@ mac_then_decrypt_ok:
 	 * included in the length) and pkt->length <= buf->len -
 	 * PKT_TAG_LEN (The buffer we received is actually has all of
 	 * the payload).
-	 *
-	 * While not a strict requirement, none of the packets actually use the
-	 * flag field yet either, so check that here.  Whenever flags are
-	 * actually defined, this check will need to be moved into each of the
-	 * individual packet handlers.
 	 */
 
 	hdr = (lodp_hdr *)buf->plaintext;
@@ -198,14 +193,6 @@ mac_then_decrypt_ok:
 		    hdr->length);
 		ep->stats.rx_invalid_hdr++;
 		return (LODP_ERR_BAD_PACKET);
-	}
-
-	if (0 != hdr->flags) {
-		lodp_log_addr(ep, LODP_LOG_DEBUG, addr,
-		    "_on_incoming_pkt(): Header flags not 0 (%x)",
-		    hdr->flags);
-		ep->stats.rx_invalid_hdr++;
-		return (LODP_ERR_BAD_PACKET);   /* Flags not defined yet */
 	}
 
 	/*
