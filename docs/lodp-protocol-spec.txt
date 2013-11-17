@@ -1,974 +1,970 @@
 Lightweight Obfuscated Datagram Protocol (LODP)
-Yawning Angel <yawning at schwanenlied dot me>
+Yawning Angel <yawning@schwanenlied.me>
 
 0. Introduction
 
-   This is an encrypted wire transport protocol designed to be a fingerprinting
-   resistant alternative to Datagram TLS.  Its purpose is to keep a third party
-   from being able to tell what protocol is in use based on message contents
-   and to provide authentication and data integrity.
+  The Lightweight Obfuscated Datagram Protocol (LODP) is a network protocol
+  designed to be a censorship resistant alternative to Datagram TLS [RFCXXXX].
+  Its purpose is to keep a third part from being able to tell what protocol is in
+  use based on message contents and to provide authentication and data
+  integrity.
 
 1. Motivation
 
-   There is a large volume of work that allows for "reliable bulk data transfer
-   over UDP", by developing a lightweight secure obfuscated datagram transport
-   protocol, it would be possible to leverage existing research in these areas.
+  There is a large volueme of existing research and work that provides
+  "reliable bulk data transfer over unreliable datagrams".  By developing a
+  obfuscated datagram transport, it would be possible to leverage those
+  existing designs.
 
-   Examples of candidates for LODP encapsulation, in no particular order, are
-   SCTP-over-UDP, Reliable Data Protocol (RFC1151), enet, and UDT.
+  Examples for candidates for LODP encapsulation, in no particular order,
+  include, SCTP-over-UDP, Reliable Data Protocol (RFC1151), UDT, and even TCP.
 
-2. LODP Threat Model
+2. Threat Model
 
-   The threat model for LODP is identical to the threat model of obfs3
-   [OBFS3 THREAT MODEL], with added goals:
+  The threat model for LODP is identical to the threat model of obfs3
+  [OBFS3 THREAT MODEL], with added goals:
 
-      LODP offers protection against active scanning machines that expect the
-      LODP protocol.  Such machines should not be able to verify the existence
-      of the LODP protocol without compromising the authenticated encryption
-      used in session initialization.
+    LODP offers protection against active scanning machines that expect the
+    LODP protocol.  Such machines should not be able to verify the existence
+    of the LODP protocol without compromising the per-responder (server)
+    shared secret used to obfuscate session initialization.
 
-      LODP offers protection against active attackers that attempt to mount a
-      man-in-the-middle attack.  The cryptographic handshake will fail, and such
-      attacks will be detected.
+    LODP offers protection against active attackers that attempt to mount a
+    man-in-the-middle attack.  The cryptographic handshake will fail, and
+    such attacks will be detected.
 
-   LODP does not protect against adversaries that are capable of measuring
-   protocol entropy, or those that employ a protocol whitelist.
+  LODP does not protect against adversaries that are capable of measuring
+  protocol entropy, or those that employ a protocol whitelist.
 
-   Attacks on the out-of-band shared secret distribution mechanism (Eg: Tor's
-   BridgeDB) are likewise outside the scope of the protocol design, however the
-   most that an attacker that obtains a endpoint's shared secret is able to do
-   is to censor the protocol.
+  Attacks on the out-of-band shared secret distribution mechanism (Eg: Tor's
+  BridgeDB) are likewise outside the scope of the protocol design.  In the
+  event that the public component of an endpoint becomes compromised (Eg: Due
+  to Tor's BridgeDB being enumerated), the adversary is limited to denying
+  service.
 
-3. Notation and Constants
+3. Notation, Constants and Terminology
 
-   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
-   "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
-   document are to be interpreted as described in [KEYWORDS].
+  The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+  "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
+  document are to be interpreted as described in [KEYWORDS].
 
-   All packet fields are in network byte order.
+  All packet fields are in network byte order.
 
-   A byte is a 8 bit octet.
+  A byte is a 8 bit octet.
 
-   Let a | b be the concatenation of a with b.
+  Let a | b be the concatenation of a with b.
 
-   All random numbers used in this protocol MUST come from a cryptographically
-   strong random number generator.
+  Let leftmost(A,n) be the leftmost n bytes of A.
 
-4. Overview of LODP
+  Let rightmost(A,n) be the rightmost n bytes of A.
 
-   LODP attempts to make all traffic look like random noise.  The session
-   handshake uses MAC and bulk encryption keys derived from the server's public
-   Curve25519 key to mask the packet payload, and negotiates a ephemeral
-   session key to provide actual data authentication, integrity and perfect
-   forward secrecy.  In the event that the server's long term identity key is
-   compromised, the most that an attacker can do is identify the LODP protocol.
+  All random numbers used in this protocol MUST come from a cryptographically
+  strong random number generator seeded from a strong entropy source.
 
-   The LODP packet format provides for added arbitrary random padding, and
-   undersized packets are silently ignored to allow the implementer flexibility
-   when attempting to mask the packet size.
+  The Initiator is the side of a session that first initated the handshake
+  (the client).
 
-   To mitigate the potential of an attacker to mount a denial of service attack
-   given the server's host key, LODP uses a 4 way handshake similar to SCTP or
-   DTLS.
+  The Responder is the side of a session that accepted the handshake initated
+  by the Initiator (the server).
 
-5. Maximum Transmission Unit and Path MTU Discovery
+4. Overview
 
-   The MTU including IP and UDP headers MUST be a minimum of 576 bytes for IPv4
-   endpoints, and 1280 bytes for IPv6 endpoints.  Implementations MAY implement
-   PMTU discovery and MAY chose to send larger packets if the underlying data
-   link layer is capable of doing so.
+  LODP attempts to make all traffic look like random noise.  This is
+  accompished by each packet sent over the wire consisting solely of the output
+  of an Authenticated Encryption with Associated Data construct with a random
+  nonce as the Associated Data.
 
-      Note: Implementations that chose to implement PMTU discover MUST ensure
-      that the traffic profile is not trivially fingerprinted.
+  To distinguish between new sessions and existing sessions, a combination of
+  examining the source address/port combination of incoming datagrams and trial
+  decryption/authentication is used.
 
-   Implementations SHOULD make attempts to avoid IP fragmentation.
+  Session initialization is obfuscated by the server maintaining a set of long
+  term "Introductiory Keys" that are used to encrypt the payload and calculate
+  the digest for the initialization portion of the dialog.
 
-   As LODP is designed as the transport for an encapsulated higher level
-   transport, implementations MAY allow the higher level protocol to handle
-   PMTU discovery.
+  During the initalization handshake, an authenticated key exchange is
+  performed and ephemeral sesson keys are negotiated to provide Perfect Forward
+  Secrecy.
 
-   (XXX: The peer could advertise a MTU when handshaking but not sure how
-         useful that is going to be.)
-   (XXX: Technically the MTUs I chose will never be fragmented, but there's
-         probably screwed up routers/hosts on the internet that aren't spec
-         compliant, not sure "thou shalt not fragment" is better as a SHOULD or
-         a MUST)
+5. Cryptographic Algorithms
 
-6. Cryptographic Algorithms and Keys
+  LODP uses several cryptographic algorithms as part of its protocol.
 
-   LODP uses several cryptographic algorithms as part of its protocol.
+  Let H(t,x) be a cryptographic hash function with key t, and message x.
 
-   All packets are encrypted with XChaCha/20 [XCHACHA], and then the encrypted
-   payload is authenticated with the BLAKE2s [BLAKE2] algorithm
-   (Encrypt-Then-MAC).
+    Let HK_LEN be the length of the key in bytes.
 
-      Note: While BLAKE2s has a variable digest size, for the purpose of this
-      specification the full 32 bytes will be used.
+    Let HD_LEN be the length of the digest in bytes.
 
-   IVs MUST be randomly generated and MUST NOT be reused for a given key.
+  Let EXP(a,b) be curve25519(.,b,a), and g = 9. [CURVE 25519]
 
-      XChaCha/20 IV = 24 bytes in the packet header
+  Let E(t, v, x) be a stream cipher with key t, initialization vector v, and
+  message x.
 
-   Ephemeral session keys are generated during the initial handshake via a
-   modified version of the ntor [NTOR] handshake.  The 32 byte shared secret
-   is then stretched to create the required BLAKE2s and XChaCha/20 keys.
+    Let EK_LEN be the length of the key in bytes.
 
-   The modified ntor handshake uses the Curve25519 ECDH [CURVE 25519] and
-   BLAKE2s algorithms.
+    Let EV_LEN be the length of the IV in bytes.
 
-   Every end point additionally has a public Curve25519 key (IntroKey) that is
-   used to verify router identity and session establishment.  To provide
-   fingerprinting and active scanning resistance, initial semi-public
-   BLAKE2s and XChaCha/20 keys are derived via a key stretching algorithm
-   from the public Curve25519 key.
+  Let R(n) be n bytes of output from a  cryptographically strong random
+  number generator seeded from a strong entropy source.
 
-   The key stretching algorithm used is a modified version of HKDF [RFC6234],
-   adapted to use BLAKE2s's native keyed hash support instead of a HMAC
-   construct.
+  The current implementation of LODP uses:
 
-      Set H(t,x) == BLAKE2s with key t, and message x.
+    H(t,x) == BLAKE2s(t,x)
+    HK_LEN = 32 (256 bits)
+    HD_LEN = 24 (192 bits) OR 32 (256 bits)
 
-      Step 1: Extract
+    The BLAKE2s algorithm [BLAKE2s] supports variable length digests and
+    keys.  The shortened 192 bit digest form is used when H(t,x) is used for the
+    AEAD computations, while the full output is used for all other uses of
+    H(t,x).
 
-         LODP-Extract(salt, IKM) -> PRK
+    E(t,v,x) == XChaCha/20(t,v,x)
+    EK_LEN = 32 (256 bits)
+    EV_LEN = 24 (192 bits)
 
-         The output PRK is calculated as follows:
+    The XChaCha [XCHACHA] stream cipher with 20 rounds.
 
-         PRK = H(salt, IKM)
+5.1. LODP Key Derivation Function (LODP KDF)
 
-      Step 2: Expand
+  Where it is neccecary to derive keys based off a shared secret, LODP uses a
+  variant of HKDF [RFC5869] adapted to use BLAKE2s' native keyed hash support
+  instead of a HMAC construct.
 
-         LODP-Expand(PRK, info, L) -> OKM
+  Step 1: Extract
 
-         The output OKM is calculated as follows:
+    LODP-Extract(salt, IKM) -> PRK
 
-         N = ceil(L/HashLen)
-         T = T(1) | T(2) | T(3) | ... | T(N)
-         OKM = first L octets of T
+    The output PRK is calculated as follows:
 
-         where:
-         T(0) = empty string(zero length)
-         T(1) = H(PRK, T(0) | info | 0x01)
-         T(2) = H(PRK, T(1) | info | 0x02)
-         T(3) = H(PRK, T(2) | info | 0x03)
-         ...
+    PRK = H(salt, IKM)
 
-      Intro Keys:
+  Step 2: Expand
 
-         Salt = "LODP-Intro-BLAKE2s"
-         PRK = LODP-Extract(Salt, PublicCurve25519Key)
-         IntroKey = LODP-Expand(PRK, Salt, 64)
-         IntroMacKey = IntroKey[0:31]
-         IntroXChaChaKey = IntroKey[32:63]
+    LODP-Expand(PRK, info, L) -> OKM
 
-      Session Keys:
+    The output OKM is calculated as follows:
 
-         Salt = "LODP-Session-BLAKE2s"
-         PRK = SharedSecret
-         SessionKey = LODP-Expand(PRK, Salt, 128)
-         InitiatorMacKey = SessionKey[0:31] (Client->Server)
-         InitiatorXChaChaKey = SessionKey[32:63]
-         ResponderMacKey = SessionKey[64:95] (Server->Client)
-         ResponderXChaChaKey = SessionKey[96:127]
+    N = ceil(L/HashLen)
+    T = T(1) | T(2) | T(3) | ... | T(N)
+    OMK = first L octets of T
 
-         Note: The extract step is carried out as part of the handshake.
+    where:
+    T(0) = empty string(zero length)
+    T(1) = H(PRK, T(0) | info | 0x01)
+    T(2) = H(PRK, T(1) | info | 0x02)
+    T(3) = H(PRK, T(2) | info | 0x03)
+    ...
+    T(N) = H(PRK, T(N - 1) | info | N)
 
-   A rough overview of all the keys, their origins and lifetimes, and their
-   uses are as follows:
+5.2. LODP ntor Handshake
 
-      Host Curve25519 Identity Key:
+  LODP uses a modified version of the Tor Project's ntor handshake [NTOR] to
+  perform authenticated key exchange.
 
-         Long term Curve25519 key used for proving host identity and as a
-         component of the modified ntor handshake.
+  Set PROTOID == "lodp-ntor-1"
 
-      Intro BLAKE2s MAC Key:
+  Set ID == The Responder's globally unique identifier.
 
-         Long term MAC key used for providing fingerprinting resistance and
-         to defeat active scanning attacks, derived from the Curve25519 key.
+  Set X,x == The Initiator's Curve25519 key pair (X is the public component).
 
-      Intro XChaCha/20 Key:
+  Set Y,y == The Responder's Curve25519 key pair (Y is the public component).
 
-         Long term cipher key used for providing fingerprinting resistance and
-         to defeat active scanning attacks, derived from the Curve25519 key.
+  Set B,b == The Responder's Identity key pair (B is the public component).
 
-      Session BLAKE2s MAC Key:
+  The Initiator obtains B and ID out-of-band prior to establishing a connection
+  to the Responder.
 
-         Session MAC key used for data integrity.  Generated during the
-         handshake.
+  The Responder receives X in a HANDSHAKE packet and computes:
 
-      Session XChaCha/20 Key:
+    SecretInput = EXP(X,y) | EXP(X,b) | ID | B | X | Y | PROTOID
+    SharedSecret = H(PROTOID | ":key_extract", SecretInput)
+    Verify = H(PROTOID | ":key_verify", SecretInput)
+    AuthInput = Verify | ID | B | Y | X | PROTOID | "Responder"
+    Auth = H(PROTOID | ":mac", AuthInput)
 
-         Session cipher key used for data integrity/secrecy.  Generated during
-         the handshake.
+  The Initiator receives Y and Auth in a HANDSHAKE ACK packet and computes:
 
-      Note: For any given session there are 2 BLAKE2s keys and 2
-            XChaCha/20 keys.  One set is used for Initiator->Responder
-            traffic, and the other is used for Responder->Initiator traffic.
+    SecretInput = EXP(Y,x) | EXP(B,x) | ID | B | X | Y | PROTOID
+    SharedSecret = H(PROTOID | ":key_extract", SecretInput)
+    Verify = H(PROTOID | ":key_verify", SecretInput)
+    AuthInput = Verify | ID | B | Y | X | PROTID | "Responder"
+    Auth = H(PROTOID | ":mac", AuthInput)
 
-   To connect to a remote peer, the initiator obtains the Host Curve25519
-   Identity key, and derives the Intro BLAKE2s and XChaCha/20 keys.  The
-   initiator will then connect to the remote peer and generate the ephemeral
-   session MAC/cipher keys via the handshake process.  Once the handshake is
-   completed, all further data sent over the connection is authenticated and
-   encrypted with the ephemeral session keys.
-  
-   The distribution method for the Identity key is left up to the implementers.
-   Fingerprinting resistance is dependent on the security of the Identity key,
-   so the distribution mechanism SHOULD be secure.
+    The initiator then verifies that the Auth value it computed is identical
+    to the one received in the HANDSHAKE ACK packet.
+
+    Note: Both sides MUST check that none of the EXP() operations produced the
+    point at infinity, and MUST abort the handshake otherwise.
+
+5.3 The LODP SIV AEAD Construct
+
+  LODP uses Synthetic IV [RFC5297] mode as it is currently the only encryption
+  mode that does not fail catastrophically with nonce reuse.  Per the SIV
+  paper the underlying constructs can be replaced in a flexible manner given
+  certain constraints, the biggest one being that the function used to
+  calculate the synthetic IV MUST be a strong PRF.
+
+  Let a LODP AEAD Key be a bitstring HK_LEN + EK_LEN bytes in length.
+
+  Let V_LEN be a predetermined random nonce length of at least 16 bytes
+  (V_LEN = 16 bytres in the current implementation).
+
+  Encryption:
+
+    LODP-SIV-Encrypt(t, x) -> ciphertext
+
+    The output ciphertext is calculated as follows:
+
+    V = R(V_LEN)
+    Siv = H(leftmost(t, HK_LEN), V | x)
+    Ct = E(rightmost(t, EK_LEN), Siv, x)
+    ciphertext = SIV | V | CT 
+
+  Decryption:
+
+    LODP-SIV-Decrypt(t, x) -> plaintext
+
+    The output plaintext is calculated as follows:
+
+    SivAd = leftmost(x, EV_LEN + V_LEN)
+    Siv = leftmost(SivAd, EV_LEN)
+    V = rightmost(SivAd, V_LEN)
+    Pt = E(rightmost(t, EK_LEN), Siv, rightmost(t, X_LEN - (EV_LEN + V_LEN)))
+    SivCheck = H(leftmost(t, HL_LEN), V | Pt)
+    if is_equal(SivCheck, Siv)
+      plaintext = Pt 
+    else
+      plaintext = FAIL
+
+  For the purposes of LODP-SIV with BLAKE2s + XChaCha/20, HD_LEN is set to 24
+  bytes to match EV_LEN.  Implementors that chose to use other constructs MUST
+  pick a PRF H that produces a digest of EV_LEN bytes.
+
+    Note: The original SIV draft uses AES-CMAC and AES-CTR for H and E
+    respectively.  Given the massive difficulty associated with writing a timing
+    attack resistant AES implementation, LODP choses to replace the underlying
+    construct with better suited ones.
+
+6. Cryptographic Keys
+
+  Every peer in LODP that wishes to accept incoming connections (Responder)
+  have a long term Curve25519 key pair (Identity key pair).  The Identity key
+  is used by the Initiator to derive the LODP SIV key required to send data to
+  the Responder while handshaking.
+
+  Responder Identity key pair:
+
+    Long term Curve25519 keypair used for proving host identity.  The public
+    component is the shared secret used to derive the Introductory keys
+    required to open a session to the Responder.
+
+  Responder Introductory LODP SIV key:
+
+    Long term LODP SIV key derived from the public component of the Responder
+    Identity key pair via the LODP KDF.  Used to obfuscate INIT and HANDSHAKE
+    packets.
+
+  Initiator Introductory LODP SIV Key:
+
+    Ephemeral LODP SIV key randomly generated at connection establishment time.
+    Used to obfsucate INIT ACK and HANDSHAKE ACK packets, transmitted to the
+    responder in the INIT and HANDSHAKE packets.
+
+  The process for deriving the Responder Introductory LODP_SIV key from a given
+  public component of a Responder Identity key via the LODP KDF is as follows:
+
+    Salt = "LODP-Intro-BLAKE2s"
+    PRK = LODP-Extract(Salt, PublicCurve25519Key)
+    IntroductorySIVKey = LODP-Expand(PRK, Salt, HK_LEN + EK_LEN)
+
+  As part of the LODP handshake, ephemeral session keys are generated and a key
+  exchange is performed via the LODP ntor Handshake (See Section 5.2)
+  provide Perfect Forward Secrecy.
+
+  (Initiator/Responder) Session key exchange key pair:
+
+    Ephemeral Curve25519 keypair(s) used to negotiate session LODP-SIV keys.
+    Each endpoint has their own keypair.
+
+  (Initiator/Responder) Session LODP SIV key(s):
+
+    Ephemeral LODP SIV key(s) derived from the result of the handshake.  Two
+    keys are generated as part of the handshake, one set for Initiator to
+    Responder traffic, the other for Responder to Initiator traffic.
+
+  The process for deriving the session LODP SIV keys from the SharedSecret output
+  of the LODP ntor Handshake is as follows:
+
+    Salt = "LODP-Session-BLAKE2s"
+    OKM = LODP-Expand(SharedSecret, Salt, 2 * (HK_LEN + EK_LEN))
+    InitiatorSIVKey = leftmost(OKM, HK_LEN + EK_LEN) (Initiator->Responder)
+    ResponderSIVKey = rightmost(OKM, HK_LEN + EK_LEN) (Responder->Initiator)
 
 7. Packet Format
 
-   A LODP packet is comprised of a common header, the payload and optional
-   arbitrary padding.  The payload contains either control or user data.
+  A LODP packet is comprised of a common header, the payload and optional
+  arbitrary padding.  The payload contains either control or user data.
 
-     0                   1                   2                   3
-     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    |                                                               |
-    +                          BLAKE2s MAC                          +
-                                   ...
-    +                           (256 bits)                          +
-    |                                                               |
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    |                                                               |
-    +                              IV                               +
-                                   ...
-    +                           (192 bits)                          +
-    |                                                               |
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    |      Type     |     Flags     |             Length            |
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    \                                                               \
-    /                           Packet Data                         /
-    \                                                               \
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    \                                                               \
-    /              Arbitrary amount of uninterpreted data           /
-    \                                                               \
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    0                   1                   2                   3
+    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                                                               |
+   +                              SIV                              +
+                                  ...
+   +                        (EV_LEN bytes)                         +
+   |                                                               |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                                                               |
+   +                             Nonce                             +
+                                  ...
+   +                         (V_LEN bytes)                         +
+   |                                                               |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |      Type     |     Flags     |             Length            |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   \                                                               \
+   /                           Packet Data                         /
+   \                                                               \
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   \                                                               \
+   /              Arbitrary amount of uninterpreted data           /
+   \                                                               \
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 
-   All integer fields in a LODP packet MUST be transmitted in network byte
-   order.
+  All integer fields in a LODP packet MUST be transmitted in network byte
+  order.
 
-   BLAKE2s MAC: 256 bits
+  SIV: EV_LEN bytes
 
-      This field contains the BLAKE2s MAC of the LODP packet.  The keyed hash
-      algorithm is applied over the beginning of the IV field to the end of the
-      packet (The encrypted optional padding is also validated).
+    This field contans the synthetic IV calculated as part of
+    LODP-SIV-Encrypt.
 
-   IV: 192 bits
+  Nonce: V_LEN bytes
 
-      This field contains the Initialization Vector used for the XChaCha/20
-      cipher.  IVs MUST NOT be reused.
+    This field contains the random nonce generated as part of LODP-SIV-Encrypt.
+    This nonce MUST be generated randomly and MUST NOT be reused.
 
-   Type: 8 bits (unsigned integer)
+  Type: 8 bits (unsigned integer)
 
-      The type of the packet.  The values of the Type are defined as follows:
+    The type of the packet.  The values of the Type are defined as follows:
 
-   Type Value    Type
-   -----         -------------
-   0            - Data (DATA)
-   1            - Initiation (INIT)
-   2            - Initiation Acknowledgement (INIT ACK)
-   3            - Handshake (HANDSHAKE)
-   4            - Handshake Acknowledgement (HANDSHAKE ACK)
-   5            - Heartbeat (HEARTBEAT)
-   6            - Heartbeat Acknowledgement (HEARTBEAT ACK)
-   7            - Rekey (REKEY)
-   8            - Rekey Acknowledgement (REKEY ACK)
+    Type Value    Type
+    -----         -------------
+    0            - Data (DATA)
+    1            - Initiation (INIT)
+    2            - Initiation Acknowledgement (INIT ACK)
+    3            - Handshake (HANDSHAKE)
+    4            - Handshake Acknowledgement (HANDSHAKE ACK)
+    5            - Rekey (REKEY)
+    6            - Rekey Acknowledgement (REKEY ACK)
 
-   Flags: 8 bits (unsigned integer)
+  Flags: 8 bits (unsigned integer)
 
-      Type specific flags.
+    Type specific flags.  Packets containing set flags that are unknown to
+    the implementation MUST be dropped.
 
-   Length: 16 bits (unsigned integer)
+  Length: 16 bits (unsigned integer)
 
-      Payload length including the Type, Flag and Length fields ("4" for types
-      with no data).
+    Payload length including the Type, Flag and Length fields ("4" for types
+    with no data).
 
-   Packet Data: variable length
+  Packet Data: variable length
 
-      The actual packet data.
+    The actual packet data.
 
-   Arbitrary amount of uninterpreted data: variable length
+  Arbitrary amount of uninterpreted data: variable length
 
-      Optional padding.  Implementations MAY append random padding to each
-      packet to mask the packet size signature of the upper layer protocol.
-      Implementations MUST NOT interpret this data beyond verifying the MAC and
-      as part of the bulk decryption.
+    Optional padding.  Implementations MAY append random padding to each
+    packet to mask the packet size signature of the upper layer protocol.
+    Implementations MUST NOT interpret this data beyond what is neccecary in
+    LODP-SIV-Decrypt.
 
-   The XChaCha/20 encryption begins from the end of the IV to the end of the
-   packet (The optional padding is also encrypted).
+  It should be unneccecary for the packet generation code to ever set the SIV
+  and Nonce explicitly as the generation of those fields is handled by
+  LODP-SIV-Encrypt.  That is, given a buffer containing a plaintext packet
+  starting at the type field containing the full packet data including the
+  optional padding (if any), LODP-SIV-Encrypt will return a buffer suitable
+  for transmission.
 
 7.1. Data (DATA)
 
-   The following format MUST be used for Data packets.
+  The following format MUST be used for Data packets.
 
-     0                   1                   2                   3
-     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    |    Type = 0   |    Reserved   |             Length            |
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    \                                                               \
-    /                            User Data                          /
-    \                                                               \
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    0                   1                   2                   3
+    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |    Type = 0   |    Reserved   |             Length            |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                        Sequence Number                        |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   \                                                               \
+   /                            User Data                          /
+   \                                                               \
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 
-   Reserved: 8 bits
+  Reserved: 8 bits
 
-      Should be set to all '0's and ignored by the receiver.
+    Should be set to all '0's.
 
-   User Data: variable length
+  Sequence Number: 32 bits
 
-      This is the user payload data.
+    This is the sequence number used to protect established sessions from
+    replay attacks.  It is initialized to 0 when the session is established,
+    and is incremented each packet that is sent (the first DATA packet sent
+    over a session has a sequence number of 1).
 
-   The session keys derived during the handshake MUST be used for the MAC and
-   encryption of DATA packets.  DATA packets received that are MACed or
-   Encrypted with the IntroKeys MUST be discarded.
+      Note: This sequence number also applies to REKEY and REKEY ACK packets.
+
+  User Data: variable length
+
+    This is the user payload data.
+
+  The session keys derived during the handshake MUST be used for the
+  LODP-SIV-Encrypt of DATA packets.  DATA packets received that are
+  LODP-SIV-Encrypted with Introductory keys MUST be discarded.
 
 7.2. Initiation (INIT)
 
-   The following format MUST be used for Initiation packets.
+  The following format MUST be used for Initiation packets.
 
-     0                   1                   2                   3
-     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    |    Type = 1   |    Reserved   |           Length = 68         |
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    |                                                               |
-    +                 Initiator BLAKE2s MAC IntroKey                +
-                                   ...
-    +                           (256 bits)                          +
-    |                                                               |
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    |                                                               |
-    +                 Initiator XChaCha/20 IntroKey                 +
-                                   ...
-    +                           (256 bits)                          +
-    |                                                               |
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    0                   1                   2                   3
+    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |    Type = 1   |    Reserved   |             Length            |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |              Initiator Introductory LODP-SIV Key              |
+                                  ...
+   +                     (HK_LEN + EK_LEN bytes)                   +
+   |                                                               |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 
-   Reserved: 8 bits
+  Reserved: 8 bits
 
-      Should be set to all '0's and ignored by the receiver.
+    Should be set to all '0's.
 
-   Initiator BLAKE2s MAC IntroKey: 256 bits
+  Initiator Introductory LODP-SIV Key: HK_LEN + EK_LEN bytes
 
-      The BLAKE2s MAC key to use when sending the INIT ACK.
+    The LODP-SIV key to use when sending the INIT ACK.
 
-   Initiator XChaCha/20 IntroKey: 256 bits
+  The Responder's Introductory LODP-SIV key MUST be used for the
+  LODP-SIV-Encrypt of transmitted INIT packets.  INIT packets that fail
+  LODP-SIV-Decrypt on the Responder side with the Introductory LODP-SIV key
+  MUST be discarded.
 
-      The XChaCha/20 stream cipher key to use when sending the INIT ACK.
-
-   The Intro MAC and XChaCha/20 keys derived from the responder's Curve25519
-   Identity key MUST be used for the MAC and encryption of the INIT packet.  
-   INIT packets received that are MACed or Encrypted with other keys MUST be
-   discarded.
-
-   Implementations SHOULD use ephemeral MAC/XChaCha keys for the keys
-   transmitted in a INIT ACK packet.
+  Implementations MUST randomly generate the LODP-SIV key for the Initiator
+  Introductory LODP-SIV key transmitted in a INIT packet.
 
 7.3. Initiation Acknowledgement (INIT ACK)
 
-   The following format MUST be used for Initiation Acknowledgement packets.
+  The following format MUST be used for Initiation Acknowledgement packets.
 
-     0                   1                   2                   3
-     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    |    Type = 2   |    Reserved   |             Length            |
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    \                                                               \
-    /                             Cookie                            /
-    \                                                               \
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    0                   1                   2                   3
+    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |    Type = 2   |    Reserved   |             Length            |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   \                                                               \
+   /                             Cookie                            /
+   \                                                               \
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 
-   Reserved: 8 bits
+  Reserved: 8 bits
 
-      Should be set to all '0's and ignored by the receiver.
+    Should be set to all '0's.
 
-   Cookie: variable length
+  Cookie: variable length
 
-      An opaque cookie.  The format is up to the implementation however
-      implementations SHOULD generate cookies that can be validated without
-      maintaining per-connection state.
+    An opaque cookie.  The format is up to the implementation however
+    implementations SHOULD generate cookies that can be validated without
+    maintaining per-connection state.
 
-   The IntroKeys received in the INIT packet that triggered the INIT ACK MUST
-   be used for the MAC and encryption of INIT ACK packets.
+  The Initiator Introductory LODP-SIV key received in the INIT packet that
+  triggered a given INIT ACK MUST be used for the LODP-SIV-Encrypt of INIT ACK
+  packets.
 
 7.4. Handshake (HANDSHAKE)
 
-   The following format MUST be used for Handshake packets.
+  The following format MUST be used for Handshake packets.
 
-     0                   1                   2                   3
-     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    |    Type = 3   |    Reserved   |             Length            |
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    |                                                               |
-    +                 Initiator BLAKE2s MAC IntroKey                +
-                                   ...
-    +                           (256 bits)                          +
-    |                                                               |
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    |                                                               |
-    +                 Initiator XChaCha/20 IntroKey                 +
-                                   ...
-    +                           (256 bits)                          +
-    |                                                               |
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    |                                                               |
-    +                Initiator Curve25519 Public Key                +
-                                   ...
-    +                           (256 bits)                          +
-    |                                                               |
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    \                                                               \
-    /                             Cookie                            /
-    \                                                               \
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    0                   1                   2                   3
+    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |    Type = 3   |    Reserved   |             Length            |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |              Initiator Introductory LODP-SIV Key              |
+                                  ...
+   +                     (HK_LEN + EK_LEN bytes)                   +
+   |                                                               |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                                                               |
+   +                Initiator Curve25519 Public Key                +
+                                  ...
+   +                           (256 bits)                          +
+   |                                                               |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   \                                                               \
+   /                             Cookie                            /
+   \                                                               \
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 
-   Reserved: 8 bits
+  Reserved: 8 bits
 
-      Should be set to all '0's and ignored by the receiver.
+    Should be set to all '0's.
 
-   Initiator BLAKE2s MAC IntroKey: 256 bits
+  Initiator Introductory LODP-SIV Key: HK_LEN + EK_LEN bytes
 
-      The BLAKE2s MAC key to use when sending the HANDSHAKE ACK.  This
-      key MUST be identical to the key transmitted in the INIT packet.
+    The LODP-SIV key to use when sending the HANDSHAKE ACK.  It MUST be
+    identical to the Initiator Introductory LODP-SIV key transmitted in the
+    INIT packet.
 
-   Initiator XChaCha/20 IntroKey: 256 bits
+  Initiator Curve25519 Public Key: 256 bits
 
-      The XChaCha/20 stream cipher key to use when sending the HANDSHAKE ACK.
-      This key MUST be identical to the key transmitted in the INIT packet.
+    The ephemeral Curve25519 public key to use when deriving the session
+    keys.
 
-   Initiator Curve25519 Public Key: 256 bits
+  Cookie: variable length
 
-      The Curve25519 public key to use when deriving the session keys.
+    The opaque cookie received in the INIT ACK, echoed exactly.
 
-   Cookie: variable length
-
-      The opaque cookie received in the INIT ACK, echoed exactly.
-
-   The Intro MAC and XChaCha/20 keys derived from the responder's Curve25519
-   Identity key MUST be used for the MAC and encryption of the HANDSHAKE
-   packet.  HANDSHAKE packets received that are MACed or Encrypted with other
-   keys MUST be discarded.
+  The Responder's Introductory LODP-SIV key MUST be used for the
+  LODP-SIV-Encrypt of HANDSHAKE packets.  HANDSHAKE packets that fail
+  LODP-SIV-Decrypt on the responder side with the Introductory LODP-SIV key
+  MUST be discarded.
 
 7.5. Handshake Acknowledgement (HANDSHAKE ACK)
 
-   The following format MUST be used for Handshake Acknowledgement packets.
+  The following format MUST be used for Handshake Acknowledgement packets.
+
+    0                   1                   2                   3
+    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |    Type = 4   |    Reserved   |             Length            |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                                                               |
+   +                Responder Curve25519 Public Key                +
+                                  ...
+   +                           (256 bits)                          +
+   |                                                               |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                                                               |
+   +                Handshake Authentication Digest                +
+                                  ...
+   +                        (HD_LEN bytes)                         +
+   |                                                               |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 
-     0                   1                   2                   3
-     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    |    Type = 4   |    Reserved   |          Length = 136         |
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    |                                                               |
-    +                Responder Curve25519 Public Key                +
-                                   ...
-    +                           (256 bits)                          +
-    |                                                               |
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    |                                                               |
-    +                Handshake Authentication Digest                +
-                                   ...
-    +                           (256 bits)                          +
-    |                                                               |
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+  Reserved: 8 bits
 
-   Reserved: 8 bits
+    Should be set to all '0's.
 
-      Should be set to all '0's and ignored by the receiver.
+  Responder Curve25519 Public Key: 256 bits
 
-   Responder Curve25519 Public Key: 256 bits
+    The ephemeral Curve25519 public key to use when deriving the session
+    keys.
 
-      The Curve25519 public key to use when deriving the session keys.
+  Handshake Authentication Digest: HD_LEN bytes
 
-   Handshake Authentication Digest: 256 bits
+    The digest (Auth) to used when verifying the remote identity as part of
+    the LODP ntor Handshake.
 
-      The BLAKE2s digest (Auth) to used when verifying the remote identity as
-      part of the handshake.
+  The Initiator Introductory LODP-SIV key received in the HANDSHAKE packet
+  that triggered a given HANDSHAKE ACK MUST be used for the LODP-SIV-Encrypt
+  of HANDSHAKE ACK packets.
 
-   The IntroKeys received in the HANDSHAKE packet that triggered the HANDSHAKE
-   ACK MUST be used for the MAC and encryption of HANDSHAKE ACK packets.
+7.6. Rekey (REKEY)
 
-7.6. Heartbeat (HEARTBEAT)
+  The following format MUST be used for Rekey packets.
 
-   The following format MUST be used for Heartbeat packets.
+    0                   1                   2                   3
+    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |    Type = 5   |    Reserved   |           Length = 40         |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                        Sequence Number                        |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                                                               |
+   +                Initiator Curve25519 Public Key                +
+                                  ...
+   +                           (256 bits)                          +
+   |                                                               |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 
-     0                   1                   2                   3
-     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    |    Type = 5   |    Reserved   |             Length            |
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    \                                                               \
-    /                        Heartbeat Data                         /
-    \                                                               \
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+  Reserved: 8 bits
 
-   Reserved: 8 bits
+    Should be set to all '0's.
 
-      Should be set to all '0's and ignored by the receiver.
+  Sequence Number: 32 bits
 
-   Heartbeat Data: variable length
+    This is the sequence number used to protect established sessions from
+    replay attacks.  It is initialized to 0 when the session is established,
+    and is incremented each packet that is sent.
 
-      The data that the receiver should echo in a Heartbeat Acknowledgement.
-      The format is left unspecified.
+      Note: This sequence number also applies to DATA and REKEY ACK packets.
 
-   The session keys derived during the handshake MUST be used for the MAC and
-   encryption of HEARTBEAT packets.  HEARTBEAT packets received that are MACed
-   or Encrypted with any other keys MUST be discarded.
+  Initiator Curve25519 Public Key: 256 bits
 
-7.7. Heartbeat Acknowledgement (HEARTBEAT ACK)
+    The Curve25519 public key to use when deriving the new session keys.
 
-   The following format MUST be used for Heartbeat Acknowledgement packets.
+  The current session keys derived during the handshake MUST be used for the
+  LODP-SIV-Encrypt of REKEY packets.  REKEY packets received that are
+  LODP-SIV-Encrypted with Introductory keys MUST be discarded.
 
-     0                   1                   2                   3
-     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    |    Type = 6   |    Reserved   |             Length            |
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    \                                                               \
-    /                     Echoed Heartbeat Data                     /
-    \                                                               \
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+7.7. Rekey Acknowledgement (REKEY ACK)
 
-   Reserved: 8 bits
+  The following format MUST be used for Rekey Acknowledgement packets.
 
-      Should be set to all '0's and ignored by the receiver.
+    0                   1                   2                   3
+    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |    Type = 6   |    Reserved   |             Length            |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                        Sequence Number                        |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                                                               |
+   +                Responder Curve25519 Public Key                +
+                                  ...
+   +                           (256 bits)                          +
+   |                                                               |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                                                               |
+   +                Handshake Authentication Digest                +
+                                  ...
+   +                        (HD_LEN bytes)                         +
+   |                                                               |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 
-   Echoed Heartbeat Data: variable length
+  Reserved: 8 bits
 
-      The Heartbeat Data received in the Heartbeat packet that triggered the
-      Heartbeat Acknowledgement, echoed exactly.
+    Should be set to all '0's.
 
-   The session keys derived during the handshake MUST be used for the MAC and
-   encryption of HEARTBEAT ACK packets.  HEARTBEAT ACK packets received that
-   are MACed or Encrypted with any other keys MUST be discarded.
+  Sequence Number: 32 bits
 
-7.8. Rekey (REKEY)
+    This is the sequence number used to protect established sessions from
+    replay attacks.  It is initialized to 0 when the session is established,
+    and is incremented each packet that is sent.
 
-   The following format MUST be used for Rekey packets.
+    Note: This sequence number also applies to DATA and REKEY packets.
 
-     0                   1                   2                   3
-     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    |    Type = 7   |    Reserved   |           Length = 36         |
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    |                                                               |
-    +                Initiator Curve25519 Public Key                +
-                                   ...
-    +                           (256 bits)                          +
-    |                                                               |
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+  Responder Curve25519 Public Key: 256 bits
 
-   Reserved: 8 bits
+    The Curve25519 public key to use when deriving the new session keys.
 
-      Should be set to all '0's and ignored by the receiver.
+  Handshake Authentication Digest: HD_LEN bytes
 
-   Initiator Curve25519 Public Key: 256 bits
+    The digest (Auth) to used when verifying the remote identity as part of
+    the rekeying procedure.
 
-      The Curve25519 public key to use when deriving the new session keys.
+  The current session keys derived during the handshake MUST be used for the
+  LODP-SIV-Encrypt of REKEY ACK packets.  REKEY ACK packets received that
+  are LODP-SIV-Encrypted with the Introductory keys MUST be discarded.
 
-   The current session keys derived during the handshake MUST be used for the
-   MAC and encryption of REKEY packets.  REKEY packets received that are MACed
-   or Encrypted with the IntroKeys MUST be discarded.
+8. Packet Processing
 
-7.9. Rekey Acknowledgement (REKEY ACK)
+  When a new packet has been received implementations SHOULD process it as
+  follows:
 
-   The following format MUST be used for Rekey Acknowledgement packets.
+    1. Packets that are obviously malformed are silently discarded.
 
-     0                   1                   2                   3
-     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    |    Type = 8   |    Reserved   |          Length = 136         |
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    |                                                               |
-    +                Responder Curve25519 Public Key                +
-                                   ...
-    +                           (256 bits)                          +
-    |                                                               |
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    |                                                               |
-    +                Handshake Authentication Digest                +
-                                   ...
-    +                           (256 bits)                          +
-    |                                                               |
-    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    2. If there is (a) existing session(s) associated with the packet's
+       source address/port combination:
 
-   Reserved: 8 bits
+      a) LODP-SIV-Decrypt(SessionKey, packet)
 
-      Should be set to all '0's and ignored by the receiver.
+         If this fails, the packet is processd as the potential component of a
+         session handshake (Step 3).
 
-   Responder Curve25519 Public Key: 256 bits
+           Note: There MAY be more than one session originating from a given
+           source address/port.  It is left up to implementations if they
+           allow this or not, however implementations MUST account for
+           retransmitted HANDSHAKE packets in the event that HANDSHAKE ACKs
+           are lost.
 
-      The Curve25519 public key to use when deriving the new session keys.
+      b) If the packet type is INIT ACK or HANDSHAKE ACK, the packet is
+         processed if the local endpoint is the Initator of the existing
+         session, otherwise the packet MUST be silently discarded.
 
-   Handshake Authentication Digest: 256 bits
+      c) If the packet type is DATA, REKEY or REKEY ACK, the sequence number is
+         verified to be in the acceptable window, and the packet is processed.
+         Packets that are deemed to be replays MUST be silently discarded.
 
-      The BLAKE2s digest (Auth) to used when verifying the remote identity as
-      part of the rekeying procedure.
+      d) All other packet types MUST be silently discarded.
 
-   The current session keys derived during the handshake MUST be used for the
-   MAC and encryption of REKEY ACK packets.  REKEY ACK packets received that
-   are MACed or Encrypted with the IntroKeys MUST be discarded.
+    3. If there is no existing session(s) associated with the packet's source
+         address/port combination:
 
-8. The Modified ntor Handshake
+      a) LODP-SIV-Decrypt(IntroductoryKey, packet)
 
-   Set PROTOID == "lodp-ntor-1".
+         If this fails (or there is no Introductory Key as in the case of a
+         Initiator only endpoint) the packet MUST be silently discarded.
 
-   Set H(t,x) == BLAKE2s with key t, and message x.
+      b) If the packet type is INIT or HANDSHAKE the packet is processed
+         (See "Session Establishment").  Otherwise the packet MUST be
+         silently discarded.
 
-   Set EXP(a,b) == curve25519(.,b,a), and g = 9.  Both parties MUST check that
-   the operation did not produce the point at infinity, and MUST abort the
-   handshake otherwise.
+9. Session Establishment
 
-   Set X,x = The initiator's Curve25519 key pair (X is the public component
-             transmitted in the HANDSHAKE packet).
+  The session establisment process and the keys used for each packet is as
+  follows:
 
-   Set Y,y = The responder's Curve25519 key pair (Y is the public component
-             transmitted in the HANDSHAKE ACK packet).
+     Initiator                                 Responder
+     ---------                                 ---------
 
-   Set B,b = The responder's Curve25519 Identity key pair (B is the public
-             component distributed to the initiator out-of-band).
+     [Obtain the Responder
+      Identity key]
 
-   The responder side of the handshake computes:
+     [Derive the Responder
+      Introductory LODP-SIV key]
 
-      SecretInput = EXP(X,y) | EXP(X,b) | B | X | Y | PROTOID
-      SharedSecret = H(PROTOID | ":key_extract", SecretInput)
-      Verify = H(PROTOID | ":key_verify", SecretInput)
-      AuthInput = Verify | B | Y | X | PROTOID | "Responder"
-      Auth = H(PROTOID | ":mac", AuthInput)
+     [Create TCB]
 
-      The responder then transmits Y and Auth to the initiator in the HANDSHAKE
-      ACK packet.
+     [Randomly create a Initiator
+      Introductory LODP-SIV key]
 
-   The initiator side computes:
+     INIT (Responder Introductory   -------->
+       LODP-SIV key)
 
-      SecretInput = EXP(Y,x) | EXP(B,x) | B | X | Y | PROTOID
-      SharedSecret = H(PROTOID | ":key_extract", SecretInput)
-      Verify = H(PROTOID | ":key_verify", SecretInput)
-      AuthInput = Verify | B | Y | X | PROTOID | "Responder"
-      Auth = H(PROTOID | ":mac", AuthInput)
+                                               [Create cryptographically
+                                                strong cookie]
 
-      The initiator verifies that the Auth value it computed is identical to the
-      one received in the HANDSHAKE ACK packet.
+                                    <--------  INIT ACK (Initiator
+                                                  Introductory LODP-SIV
+                                                  key contained in INIT)
 
-   Ephemeral session keys are then derived from the SharedSecret value per
-   section 6.
+     HANDSHAKE (Responder           -------->
+       Introductory LODP-SIV key)
 
-      Note: This handshake is different from the original ntor handshake in the
-      choice of constants, the use of the BLAKE2s keyed hash algorithm and the
-      omission of NODEID.
+                                               [Validate cookie]
 
-9. Packet Processing
+                                               [Create TCB]
 
-   When a new packet has been received, implementations should process it as
-   follows:
+                                               [Complete ntor handshake]
 
-      0. Optionally packets that are obviously malformed MAY be silently
-         discarded before further processing is applied to conserve resources.
+                                               [Connection state ->
+                                                ESTABLISHED]
 
-      1. If there is (a) existing session(s) associated with the packet's
-         Address/Port combination.
+                                    <--------  HANDSHAKE ACK (Initiator
+                                                  Introductoru LODP-SIV key
+                                                  contained in HANDSHAKE)
 
-         a) The MAC is verified with the SessionKey in the existing TCB.  If
-            the verification fails the packet is processed as part of a new
-            handshake (Step 2).
+     [Complete ntor handshake]
 
-              Note: There MAY be more than one Session originating from a given
-                    Address/Port.  It is left up to implementations if they
-                    allow this or not, however implementations MUST account for
-                    retransmitted HANDSHAKE packets in the event that HANDSHAKE
-                    ACKs are lost.
+     [Validate ntor digest]
 
-         b) The packet is decrypted with the cipher SessionKey in the existing
-            TCB.
+     [Connection state -> ESTABLISHED]
 
-         c) If the packet type is INIT ACK or HANDSHAKE ack, and the session is
-            in the middle of handshaking, the packet is processed.  Otherwise
-            the packet MUST be silently discarded.
+      DATA (Initiator Session        <------->  DATA (Responder Session
+        LODP-SIV key)                             LODP-SIV key)
 
-         d) If the packet type is DATA, HEARTBEAT, HEARTBEAT ACK, REKEY or
-            REKEY ACK, the packet is processed.  Otherwise the packet MUST be
-            silently discarded.
+  The Responder MUST NOT allocate any session state until it receives a valid
+  HANDSHAKE packet from the Initiator.
 
-               Note: Implementations MAY ignore HEARTBEAT packets if under load
-               or to prevent excess traffic.
+  The Responder MUST NOT automatically retransmit HANDSHAKE ACKs.  The
+  Initiator SHOULD handle the possibility of a HANDSHAKE ACK getting lost by
+  retransmitting HANDSHAKE packets.  The responder MAY cache the payload of the
+  HANDSHAKE ACK packet to conserve CPU, however the retransmitted HANDSHAKE ACK
+  MUST be separately LODP-SIV-Encrypted to generate a new nonce.
 
-      2. If there is no existing session associated with the packet's
-         Address/Port combination.
+    Note: The first DATA packet in each direction has a sequence number of 1.
 
-         a) The MAC is verified with the MAC IntroKey.  If the verification
-            fails, the packet MUST be silenty discarded.
+10. Rekeying Procedure
 
-         b) The packet is decrypted with the cipher IntroKey.
+  Due to the limited sequence number space, implementations MUST rotate the
+  session keys periodically.  LODP implements this via the REKEY and REKEY ACK
+  packets.
 
-         c) If the packet type is INIT, INIT ACK, HANDSHAKE or HANDSHAKE ACK,
-            the packet is processed (See "Session Establishment").  Otherwise
-            the packet MUST be silently discarded.
+    Note: Rekeying is always Initiator driven.
 
-10. Session Establishment
+  The rekeying process and the keys used for each packet are as follows:
 
-   The session establishment process and the keys used for each packet is as
-   follows:
+     Initiator                                 Responder
+     ---------                                 ---------
 
-      Initiator                                 Responder
-      ---------                                 ---------
+     REKEY (Initiator Session       -------->
+        LODP-SIV key)
 
-      [Obtain the responder
-       Identity key]
+                                               [Validate sequence number]
 
-      [Derive the responder
-       IntroKeys]
+                                               [Complete ntor handshake]
 
-      [Create TCB]
+                                    <--------  REKEY ACK (Responder
+                                                 Session LODP-SIV key from the
+                                                 previous handshake)
 
-      INIT (IntroKeys)               -------->
+     [Complete ntor handshake]
 
-                                                [Create cryptographically
-                                                 strong cookie]
+     [Validate ntor digest]
 
-                                     <--------  INIT ACK (Initiator IntroKeys
-                                                   contained in INIT)
+                                    <--------  DATA (Old Responder Session
+                                                 LODP-SIV key)
 
-      HANDSHAKE (IntroKeys)          -------->
+      DATA (New Initiator           -------->
+        Session LODP-SIV key)
 
-                                                [Validate cookie]
+      DATA (New Initiator           <------->  DATA (New Responder
+        Session LODP-SIV key)                    Session LODP-SIV key)
 
-                                                [Create TCB]
+  To account for the possibility of a REKEY ACK getting lost, the responder MUST
+  not use the new Session LODP-SIV key until it receives data from the Initiator
+  LODP-SIV-Encrypted with the Initiator's new Session key.  The Responder MAY
+  cache the payload of the REKEY ACK packet to conserve CPU, however the
+  retransmitted REKEY ACK MUST be separately LODP-SIV-Encrypted to generate a
+  fresh nonce.
 
-                                                [Complete ntor handshake]
+  To allow for proper reception of packets in flight, implementatons MAY
+  interpret data LODP-SIV-Encrypted with the old session key after rekeying
+  completes for a limited time window.
 
-                                                [Connection state ->
-                                                 ESTABLISHED]
+  Implementations MUST rekey after 2^31 packets have been sent over a given
+  session in either direction.  Impementations MAY rekey more frequently.
 
-                                     <--------  HANDSHAKE ACK (Initiator
-                                                   IntroKeys contained in
-                                                   HANDSHAKE)
+11. Session Termination
 
-      [Complete ntor handshake]
+  While there is a handshake procedure and endpoint state maintained, LODP is
+  designed primarily to mimic the semantics of a connectionless datagram
+  protocol (a la UDP).  Thus there is no formally established mechanism for
+  connection teardown.
 
-      [Validate ntor digest]
+  Implementations MAY garbage collect idle sessions based on a timer or
+  resource constraints.  Protocols using LODP as the underlying transport
+  SHOULD implement their own methods for handling termination that include
+  cleaning up the LODP state.
 
-      [Connection state -> ESTABLISHED]
+12. Security Considerations
 
-       DATA (Initiator SessionKeys)  <------->  DATA (Responder SessionKeys)
+  As UDP source addresses are trivial to forge, care must be taken when
+  designing protocols that utilize it as a underlying transport.
 
-   The responder MUST NOT allocate any session state till it receives a valid
-   HANDSHAKE packet from the initiator.
+  In order to prevent resource starvation denial of service attacks similar in
+  nature to TCP SYN Floods, LODP utilizes a 4 way handshake.  This method of
+  defense is similar in nature to the SCTP 4 way handshake/DTLS Cookie
+  mechanism.  Implementations MUST not allocate state for incoming connections
+  until a HANDSHAKE packet with a valid cookie has been received.  This
+  prevents attempts to flood the connection table by spoofing INIT packets with
+  forged source addresses as the echoed cookie provides proof that the
+  initiating peer can receive responses.
 
-   The responder MUST NOT automatically retransmit HANDSHAKE ACKs.  The
-   initiator SHOULD handle the possibility of a HANDSHAKE ACK getting lost by
-   retransmitting HANDSHAKE packets.  The responder MAY cache the payload of
-   the HANDSHAKE ACK packet to conserve CPU, however the retransmitted HANDSHAKE
-   ACK MUST have a unique IV.
+  Due to the capability for adding random padding to mask packet size, there is
+  potential for a LODP endpoint to be used as a host in an amplification
+  attack by sending INIT packets with 0 padding with a spoofed source address.
+  The INIT ACK packet sent in response can end up being larger than the INIT
+  that triggered it (though a INIT ACK with 0 padding using the cookie
+  generation mechanism in Appendix A will be smaller).  Implementations SHOULD
+  have suitable defenses against this attack, for example limiting the amount
+  of padding in a INIT ACK (to a fixed value or to that of the INIT that
+  triggered it or rate limiting the INIT ACK response rate.
 
-11. Rekeying Procedure
+  The protocol is protected against replay attacks by the use of a opaque
+  cookie in the handshake, and the use of a sequence number in packets that are
+  sent over a established session.  The algorithm for cookie generation and 
+  verification presented in Appendix A does have a window in which cookies can
+  be replayed however with the default values this is belived to be
+  sufficiently small to where tracking spent cookies is feasable.
 
-   It may be desirable to rotate the keys of a existing session periodically.
-   LODP supports this via the REKEY and REKEY ACK packets.
+  The LODP SIV construct is designed to be resistant to nonce reuse/misuse, for
+  example in the case that the "random number generator" gets patched by the
+  distribution packager and crippled.  If the nonce is reused for a given key,
+  authentication is maintained but attackers will be able to determine that
+  identical data was transmited in the given LODP frames.
 
-      Note: Rekeying is always client (Initiator) driven.
+  A collision between SIVs for a given key will reduce the security of the bulk
+  encryption component of LODP SIV to that of a n-time-pad.  With the proposed
+  BLAKE2s based implementation of LODP SIV no more than 2^96 invocations of
+  LODP-SIV-Encrypt should be made with a given key.  As session keys are rotated
+  every 2^31 invocations in the worst case, this bound is primarily relevant to
+  the long term introductory keys.  Given current and forseeable network
+  transmission speeds, this bound is likely to be sufficient for the forseeable
+  future.
 
-   The rekeying process and the keys used for each packet are as follows:
+  In the event that a collision between SIVs occurs for Responer Introductory
+  keys, the recoverable plaintext via crib dragging is limited to the 4 byte
+  LODP packet header as rest of payloads for the packets used as part of the
+  session initialization process is high entropy random data.
 
-      Initiator                                 Responder
-      ---------                                 ---------
+13. Open Questions
 
-       REKEY (Initiator SessionKeys) -------->
+  SIV mode is the most robust when random nonces are used but it's rather slow.
+  It would be nice to be able to use one of the one-pass AEAD modes (AES-OCB is
+  tempting).  Is there a way to prevent/mitigate the catastropic failure common
+  in such modes when the nonce is reused?  For session IVs, a suitable PRP
+  could be used.  What is the best way to handle nonce reuse for packets
+  encrypted/authenticated with the Responder Introductory Keys?
 
-                                                [Complete ntor handshake]
-
-                                     <--------  REKEY ACK (Responder
-                                                   SessionKeys from the
-                                                   previous handshake)
-
-      [Complete ntor handshake]
-
-      [Validate ntor digest]
-
-                                     <--------  DATA (Old Responder
-                                                      SessionKeys)
-
-       DATA (New Initiator           -------->
-             SessionKeys)
-
-       DATA (New Initiator           <------->  DATA (New Responder
-             SessionKeys)                             SessionKeys)
-
-   To account for the possibility of a REKEY ACK getting lost, the responder
-   MUST not use the new SessionKeys derived from the rekeying process until it
-   receives data from the initiator MACed/encrypted with the initiator's new
-   SessionKeys.  The responder MAY cache the payload of the REKEY ACK packet to
-   conserve CPU, however the retransmitted REKEY ACK MUST have a unique IV.
-
-   To allow for proper reception of packets in flight, implementations MAY
-   interpret data MACed/encrpyted with the old session key after rekeying
-   completes for a limited timeframe.
-
-   It is RECOMMENDED that implementations rekey after every gibibyte of traffic
-   transfered or after every hour of time passes, whichever comes first.
-
-   (XXX: Should I specify this in the number of packets instead?)
-
-12. Session Teardown
-
-   As LODP is designed for encapsulated transport, session teardown is
-   generally handled by the upper level protocol.  Implementations MUST allow
-   the user to specify that a given session has terminated, and reclaim
-   resources when this occurs.
-
-   Implementations MAY additionally implement detection of idle connections by
-   using the HEARTBEAT and HEARTBEAT ACK packets.
-
-13. Security Considerations
-
-   In the event that an attacker can obtain the responder's Identity key, it is
-   able to decrypt the handshake's bulk encryption and thus identify LODP
-   traffic.  However this event implies that the distribution mechanism or one
-   of the peers participating in protocol has been attacked, and thus censoring
-   LODP is possible due to the attacker knowing the IP address/Port associated
-   with the responder.  Additionally as ephemeral session keys are used, this
-   does not compromise the secrecy or integrity of the transported data.
-
-   Most stateful protocols are vulnerable to SYN flood like DDOS attacks.  In
-   LODP this attack is mitigated by the use of a 4 way handshake preventing
-   INIT packets with spoofed source addresses from consuming server resources
-   apart from the processing power required to create INIT ACK responses.
-
-   As randomized IVs are used, the odds of collisions due to the birthday
-   problem cannot be ignored.  However since the IV is 192 bits, the odds of
-   this occurring are astronomically small given a cryptographically strong
-   random number generator.  Additionally implementations SHOULD renegotiate
-   session keys periodically, further reducing the risk.
-
-   The protocol is vulnerable to replay attacks unless proper defenses are
-   present.  Implementations MUST construct HANDSHAKE ACK cookies in a way that
-   disallows replay.  Implementations MAY incorporate additional defenses such
-   as rejecting duplicate IVs.
-
-   Data packets have no replay protection under the assumption that the
-   encapsulated higher level protocol handles this on it's own.  As most
-   protocols that attempt to provide reliable data services include sequence
-   numbering, common use cases should be adequately defended against this
-   attack.
+  It would be nice to future proof the protocol by adding the capability to
+  negotiate the ciphersuite at runtime, however unless multiple trial
+  decryptions across all of the supported suites is acceptable in terms of
+  performance for the Introductory Keys, this seems problematic to do in
+  practice.
 
 14. References
 
-   [OBFS3 THREAT MODEL]  Kadianakis, G., "Threat model for the obfs3
-                         obfuscation protocol",
-                         (https://gitweb.torproject.org/pluggable-transports/
-                          obfsproxy.git/blob/HEAD:/doc/obfs3/
-                          obfs3-threat-model.txt)
+  [OBFS3 THREAT MODEL]  Kadianakis, G., "Threat model for the obfs3
+                        obfuscation protocol",
+                        (https://gitweb.torproject.org/pluggable-transports/
+                         obfsproxy.git/blob/HEAD:/doc/obfs3/
+                         obfs3-threat-model.txt)
 
-   [KEYWORDS]     Bradner, S., "Key words for use in RFCs to Indicate
-                  Requirement Levels", BCP 14, RFC 2119, March 1997.
+  [KEYWORDS]     Bradner, S., "Key words for use in RFCs to Indicate
+                 Requirement Levels", BCP 14, RFC 2119, March 1997.
 
-   [XCHACHA]      Bernstein, D. J., "Extending the Salsa20 nonce",
-                  (http://cr.yp.to/snuffle/xsalsa-20110204.pdf)
+  [CURVE 25519]  Bernstein, D. J., "A state-of-the-art Diffie-Hellman
+                 function", (https://cr.yp.to/ecdh.html)
 
-   [BLAKE2]       Aumasson, J., Neves, S., Wilcox-O'Hearn Z, and Winnerlein,
-                  C., "BLAKE2: simpler, smaller, fast as MD5", June 2013.
+  [BLAKE2]       Aumasson, J., Neves, S., Wilcox-O'Hearn Z, and Winnerlein,
+                 C., "BLAKE2: simpler, smaller, fast as MD5", June 2013.
 
-   [RFC5869]      Krawczyk, H. and Eronen, P., "HMAC-based Extract-and-Expand
-                  Key Derivation Functions", RFC 5869, May 2010.
+  [XCHACHA]      Bernstein, D. J., "Extending the Salsa20 nonce",
+                 (http://cr.yp.to/snuffle/xsalsa-20110204.pdf)
 
-   [CURVE 25519]  Bernstein, D. J., "A state-of-the-art Diffie-Hellman
-                  function", (https://cr.yp.to/ecdh.html)
+  [RFC5869]      Krawczyk, H. and Eronen, P., "HMAC-based Extract-and-Expand
+                 Key Derivation Functions", RFC 5869, May 2010.
 
-   [NTOR]         Matthewson, N., "Improved circuit-creation key exchange",
-                  (https://gitweb.torproject.org/torspec.git/blob_plain/HEAD:
-                   /proposals/216-ntor-handshake.txt)
+  [NTOR]         Matthewson, N., "Improved circuit-creation key exchange",
+                 (https://gitweb.torproject.org/torspec.git/blob_plain/HEAD:
+                  /proposals/216-ntor-handshake.txt)
+
+  [RFC5297]      Kartkins, D., "Synthetic Initialization Vector (SIV)
+                 Authenticated Encryption Using the Advanced Encryption
+		 Standard (AES)", RFC 5297, October 2008.
 
 15. Acknowledgements
 
-   The author would like to thank Roger Dingledine, George Kadianakis, Mike
-   Perry, Nick Mathewson, Brandon Wiley, Zachary Weinberg and the various
-   denizens of #tor-dev for their useful comments.
+  The author would like to thank Roger Dingledine, Elly Jones, George
+  Kadianakis, Mike Perry, Nick Mathewson, Brandon Wiley, Zachary Weinberg and
+  the various denizens of #tor-dev for their useful comments.
 
-   Much of LODP's design has been inspired by the SSU protocol developed by the
-   I2P project and the Stream Control Transmission Protocol.
+  Much of LODP's design has been inspired by the SSU protocol developed by the
+  I2P project and the Stream Control Transmission Protocol.
 
-   (XXX: Did I miss anyone?)
+  The ntor handshake was lifted almost verbatim from the tor specification.
 
-XXX: Stuff that I want input on (my comments below)
+  The example handshake cookie algorithm was largely inspired by that suggested
+  in the DTLS specification.
 
-   * BLAKE2s is still rather new, and feels like I'm placing all of my eggs in
-     the "Oh god, I hope ChaCha is secure" basket.
+Appendix A. Example Handshake Cookie Algorithm
 
-     (http://eprint.iacr.org/2013/467.pdf seems to indicate that it's ok to use,
-      but insufficient analysis?)
+  This is a example method of generating cookies from INIT packets, and
+  validating them in HANDSHAKE packets.
 
-     Should I use BLAKE2b?  It'll be faster on 64 bit architectures, but 512
-     bits of keying material for the MAC when my bulk crypto uses 256 bits
-     seems like overkill.
+  CookieKey = R(HK_LEN)
 
-   * Some people have suggested using OCB (patent issues), but that requires
-     finding a non-suck block cypher (I could use ChaCha in a LIONESS construct
-     but then I might as well just use AES CCM or something)
+  GenerateCookie(InitPacket, addr, port) -> Cookie
 
-   * The fact that I have 60 bytes worth of headers is kind of worrying.  If
-     it's an issue I could just use ChaCha/20 (64 bit IV) and truncate the MAC
-     output down to 128 bits and half the header size (28 bytes).  Just using
-     truncated MAC cuts the header down to 44 bytes.  Note that the large
-     header does not weaken the fingerprinting resistance as undersized
-     packets are silently ignored so implementations are free to send
-     undersized packets as cover traffic).
+  Buf = addr | port | InitPacket.InitiatorLODP-SIV-Key
+  Cookie = H(CookieKey, buf)
 
-   * Per zwol: elligator instead of preshared secret?
-     (No implementation, I'm not smart enough to do it, not sure if applying
-      elligator to all incoming unknown packets will kill the server's CPU or
-      not.  Additionally that still requires some form of shared secret or I'll
-      be vulnerable to active probing attacks, and using a shared secret in
-      itself isn't a issue for Tor PTs because an attacker obtaining the shared
-      secret also gives up the IP/Port to a censor, and we lose anyway.)
+  ValidateCookie(HandshakePacket, addr, port) -> Result
 
-   * Is it ok to derive the Intro MAC/encryption keys from the public identity
-     key?  It's relatively unlikely than an IV would get reused for the 2
-     packets that it's relevant for and there are more cost effective attacks
-     to defeat the fingerprinting resistance ("just attack bridgedb")...
+  Buf = addr | port | HandshakePacket.InitiatorLODP-SIV-Key
+  CookieCheck = H(CookieKey, Buf)
+  if is_equal(CookieCheck, HandshakePacket.Cookie)
+    result = PASS
+  else
+    result = FAIL
 
-     I mean, I *could* do something like "current date in some format is used
-     as the personalization for intro MAC" without too much extra overhead.
-
-   * Is this actually secure?  I'm not a cryptographer.  Are the primitives I'm
-     using safe?
-
-XXX: Stuff that's probably ok, but want a second opinion on
-
-   * The ntor variant I use doesn't have a notion of NODEID, but otherwise is
-     near identical (Some of the personalization strings I use are different).
-     Did I inadvertently break the security? (Don't think so)
-
-   * Is it ok to say "the encapsulated transport should handle graceful
-     teardown, implementations can implement an idle timer to reap stale
-     connections"?
-
-   * Should I generate errors on handshake failure or is saying "Well, it fails
-     when your timer expires sufficient"?
-
-   * Per zwol: look at what crypto_box in NaCl does and adjust my bulk crypto.
-     (It looks like the same thing that I do, at least for crypto_securebox,
-      just with Poly1305-AES instead of BLAKE2s)
-
-   * There's nothing stopping people from replaying INIT packets.  I don't think
-     this is a problem, since all it does is result in an INIT ACK that looks
-     like random noise, and the responder won't allocate state.
-
-XXX: Revision history
-   2013-10-28:
-
-     * Synced protocol spec with codebase.
-
-   2013-09-12: Second draft posted to tor-dev
-
-     * Replaced SHA-256 with BLAKE2s
-
-     * Removed the timestamp information from INIT as replayed INIT packets
-       don't harm the security or stability of the system.
-
-     * Added support for client driven rekeying.
-
-   2013-08-27: Initial draft posted to tor-dev
+  CookieKey MUST be regenerated periodically.  The algorithm does not catch
+  stale cookies within the rotation period, thus the period SHOULD be
+  sufficiently small.  Implementations SHOULD also prevent cookies from being
+  used more than once, the amount of state required being limited by the size of
+  the key regeneration period.
 
