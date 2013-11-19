@@ -33,6 +33,7 @@
 #include "lodp_crypto.h"
 #include "lodp_impl.h"
 
+
 #ifndef _LODP_PKT_H_
 #define _LODP_PKT_H_
 
@@ -51,8 +52,7 @@ typedef enum {
 
 typedef struct __attribute__ ((__packed__)) {
 	/* The authenticated encryption tag */
-	uint8_t mac[LODP_MAC_DIGEST_LEN];
-	uint8_t iv[LODP_BULK_IV_LEN];
+	uint8_t siv_tag[LODP_SIV_TAG_LEN];
 
 	/* The common packet Type/Length/Value header */
 	uint8_t type;
@@ -73,8 +73,7 @@ typedef struct __attribute__ ((__packed__)) {
 
 typedef struct __attribute__ ((__packed__)) {
 	lodp_hdr hdr;
-	uint8_t intro_mac_key[LODP_MAC_KEY_LEN];
-	uint8_t intro_bulk_key[LODP_MAC_KEY_LEN];
+	uint8_t intro_siv_key[LODP_SIV_KEY_LEN];
 } lodp_pkt_init;
 
 typedef struct __attribute__ ((__packed__)) {
@@ -84,8 +83,7 @@ typedef struct __attribute__ ((__packed__)) {
 
 typedef struct __attribute__ ((__packed__)) {
 	lodp_hdr hdr;
-	uint8_t intro_mac_key[LODP_MAC_KEY_LEN];
-	uint8_t intro_bulk_key[LODP_MAC_KEY_LEN];
+	uint8_t intro_siv_key[LODP_SIV_KEY_LEN];
 	uint8_t public_key[LODP_ECDH_PUBLIC_KEY_LEN];
 	uint8_t cookie[];
 } lodp_pkt_handshake;
@@ -119,7 +117,7 @@ typedef struct __attribute__ ((__packed__)) {
  * DATA, INIT ACK and HANDSHAKE packets all need to fixup the length(s) to
  * reflect the variable length portion of the payload.
  */
-#define PKT_TAG_LEN			(LODP_MAC_DIGEST_LEN + LODP_BULK_IV_LEN)
+#define PKT_TAG_LEN			LODP_SIV_TAG_LEN
 #define PKT_TLV_LEN			4
 #define PKT_HDR_LEN			sizeof(lodp_hdr)
 
@@ -152,11 +150,9 @@ int lodp_on_incoming_pkt(lodp_endpoint *ep, lodp_session *session, lodp_buf
 int lodp_send_data_pkt(lodp_session *session, const uint8_t *buf, size_t len);
 int lodp_send_init_pkt(lodp_session *session);
 int lodp_send_init_ack_pkt(lodp_endpoint *ep, const lodp_pkt_init *init_pkt,
-    const lodp_symmetric_key *key, const struct sockaddr *addr, socklen_t
-    addr_len);
+    const lodp_siv_key *key, const struct sockaddr *addr, socklen_t addr_len);
 int lodp_send_handshake_pkt(lodp_session *session);
-int lodp_send_handshake_ack_pkt(lodp_session *session, const lodp_symmetric_key
-    *key);
+int lodp_send_handshake_ack_pkt(lodp_session *session, const lodp_siv_key *key);
 int lodp_send_rekey_pkt(lodp_session *session);
 int lodp_send_rekey_ack_pkt(lodp_session *session);
 

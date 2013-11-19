@@ -75,8 +75,13 @@ void lodp_ecdh(lodp_ecdh_shared_secret *secret, const lodp_ecdh_private_key
 /* MAC and bulk crypto (BLAKE2s/XChaCha) */
 #define LODP_MAC_KEY_LEN	32
 #define LODP_MAC_DIGEST_LEN	32
-#define LODP_BULK_KEY_LEN	32
-#define LODP_BULK_IV_LEN	24
+#define LODP_STREAM_KEY_LEN	32
+#define LODP_STREAM_IV_LEN	24
+
+#define LODP_SIV_KEY_LEN	(LODP_MAC_KEY_LEN + LODP_STREAM_KEY_LEN)
+#define LODP_SIV_IV_LEN		24
+#define LODP_SIV_NONCE_LEN	16
+#define LODP_SIV_TAG_LEN	(LODP_SIV_IV_LEN + LODP_SIV_NONCE_LEN)
 
 
 typedef struct {
@@ -84,28 +89,29 @@ typedef struct {
 } lodp_mac_key;
 
 typedef struct {
-	uint8_t bulk_key[LODP_BULK_KEY_LEN];
-} lodp_bulk_key;
+	uint8_t stream_key[LODP_STREAM_KEY_LEN];
+} lodp_stream_key;
 
 typedef struct {
 	lodp_mac_key	mac_key;
-	lodp_bulk_key	bulk_key;
-} lodp_symmetric_key;
+	lodp_stream_key stream_key;
+} lodp_siv_key;
 
 
 int lodp_mac(uint8_t *digest, const uint8_t *buf, const lodp_mac_key *key,
     size_t digest_len, size_t len);
-int lodp_encrypt(uint8_t *ciphertext, const lodp_bulk_key *key, const uint8_t
-    *iv, const uint8_t *plaintext, size_t len);
-int lodp_decrypt(uint8_t *plaintext, const lodp_bulk_key *key, const uint8_t
-    *iv, const uint8_t *ciphertext, size_t len);
-
+int lodp_siv_pack_key(uint8_t *buf, const lodp_siv_key *key, size_t len);
+int lodp_siv_unpack_key(lodp_siv_key *key, const uint8_t *buf, size_t len);
+int lodp_siv_encrypt(uint8_t *ciphertext, const lodp_siv_key *key, const
+    uint8_t *plaintext, size_t ct_len, size_t pt_len);
+int lodp_siv_decrypt(uint8_t *plaintext, const lodp_siv_key *key, const uint8_t
+    *ciphertext, size_t pt_len, size_t ct_len);
 
 /* LODP specific KDF/Handshake */
-int lodp_derive_introkeys(lodp_symmetric_key *sym_key, const
-    lodp_ecdh_public_key *pub_key);
-int lodp_derive_sessionkeys(lodp_symmetric_key *init_key, lodp_symmetric_key
-    *resp_key, const uint8_t *shared_secret, size_t shared_secret_len);
+int lodp_derive_introkey(lodp_siv_key *sym_key, const lodp_ecdh_public_key
+    *pub_key);
+int lodp_derive_sessionkeys(lodp_siv_key *init_key, lodp_siv_key *resp_key,
+    const uint8_t *shared_secret, size_t shared_secret_len);
 int lodp_ntor(uint8_t *shared_secret, uint8_t *auth,
     const lodp_ecdh_public_key *X, const lodp_ecdh_private_key *x,
     const lodp_ecdh_public_key *Y, const lodp_ecdh_private_key *y,

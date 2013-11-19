@@ -57,14 +57,14 @@ typedef struct {
 
 
 /* Packet/session related helpers */
-static int encrypt_then_mac(lodp_endpoint *ep, lodp_session *session,
-    const lodp_symmetric_key *keys, lodp_buf *buf, uint16_t pad_clamp);
-static int mac_then_decrypt(lodp_endpoint *ep, const lodp_symmetric_key *keys,
+static int siv_encrypt(lodp_endpoint *ep, const lodp_session *session,
+    const lodp_siv_key *key, lodp_buf *buf, uint16_t pad_clamp);
+static int siv_decrypt(lodp_endpoint *ep, const lodp_siv_key *key,
     lodp_buf *buf);
 static int generate_cookie(lodp_cookie *cookie, int prev_key, lodp_endpoint *ep,
     const lodp_pkt_raw *pkt, const struct sockaddr *addr, socklen_t addr_len);
-static int ntor_handshake(lodp_session *session, lodp_symmetric_key *init_key,
-    lodp_symmetric_key *resp_key, const lodp_ecdh_public_key *pub_key);
+static int ntor_handshake(lodp_session *session, lodp_siv_key *init_key,
+    lodp_siv_key *resp_key, const lodp_ecdh_public_key *pub_key);
 static void scrub_handshake_material(lodp_session *session);
 
 static inline int session_sendto(lodp_session *session, const lodp_buf *buf);
@@ -103,7 +103,7 @@ lodp_on_incoming_pkt(lodp_endpoint *ep, lodp_session *session, lodp_buf *buf,
 	assert(addr_len > 0);
 
 	/*
-	 * Validate the MAC and Decrypt
+	 * SIV Decrypt
 	 *
 	 * Note:
 	 * Before copying the data from the user buffer (received off the wire)
@@ -115,26 +115,26 @@ lodp_on_incoming_pkt(lodp_endpoint *ep, lodp_session *session, lodp_buf *buf,
 	used_session_keys = 0;
 	if (NULL != session) {
 		/* Try the session keys first */
-		ret = mac_then_decrypt(ep, &session->rx_key, buf);
+		ret = siv_decrypt(ep, &session->rx_key, buf);
 		if (!ret) {
 			used_session_keys = 1;
-			goto mac_then_decrypt_ok;
+			goto siv_decrypt_ok;
 		} else if (LODP_ERR_INVALID_MAC != ret)
-			goto mac_then_decrypt_fail;
+			goto siv_decrypt_fail;
 
 		/*
 		 * If this is the responder, and we have a REKEY ACK in flight,
 		 * try the new session keys
 		 */
 		if ((!session->is_initiator) && (STATE_REKEY == session->state)) {
-			ret = mac_then_decrypt(ep, &session->rx_rekey_key, buf);
+			ret = siv_decrypt(ep, &session->rx_rekey_key, buf);
 			if (!ret) {
 				used_session_keys = 1;
 				session_on_rekey(session);
 				scrub_handshake_material(session);
-				goto mac_then_decrypt_ok;
+				goto siv_decrypt_ok;
 			} else if (LODP_ERR_INVALID_MAC != ret)
-				goto mac_then_decrypt_fail;
+				goto siv_decrypt_fail;
 		}
 
 		/*
@@ -149,22 +149,22 @@ lodp_on_incoming_pkt(lodp_endpoint *ep, lodp_session *session, lodp_buf *buf,
 		return (LODP_ERR_INVALID_MAC);
 	}
 
-	ret = mac_then_decrypt(ep, &ep->intro_sym_keys, buf);
+	ret = siv_decrypt(ep, &ep->intro_siv_key, buf);
 	if (ret) {
-mac_then_decrypt_fail:
+siv_decrypt_fail:
 		if (LODP_ERR_INVALID_MAC == ret) {
-			lodp_log_addr(ep, LODP_LOG_DEBUG, addr, 
-				"_on_incoming_pkt(): Invalid MAC");
+			lodp_log_addr(ep, LODP_LOG_DEBUG, addr,
+			    "_on_incoming_pkt(): Invalid MAC");
 			ep->stats.rx_invalid_mac++;
 		} else
-			lodp_log_addr(ep, LODP_LOG_DEBUG, addr, 
-				"_on_incoming_pkt(): MAC then Decrypt failure (%d)",
-				ret);
+			lodp_log_addr(ep, LODP_LOG_DEBUG, addr,
+			    "_on_incoming_pkt(): SIV Decrypt failure (%d)",
+			    ret);
 
 		return (ret);
 	}
 
-mac_then_decrypt_ok:
+siv_decrypt_ok:
 
 	/*
 	 * Do the remaining packet type agnostic sanity checking
@@ -180,9 +180,9 @@ mac_then_decrypt_ok:
 	hdr = (lodp_hdr *)buf->plaintext;
 	hdr->length = ntohs(hdr->length);
 	if (hdr->length < PKT_TLV_LEN) {
-		lodp_log_addr(ep, LODP_LOG_DEBUG, addr, 
-			"_on_incoming_pkt(): Header length undersized (%d)",
-			hdr->length);
+		lodp_log_addr(ep, LODP_LOG_DEBUG, addr,
+		    "_on_incoming_pkt(): Header length undersized (%d)",
+		    hdr->length);
 		ep->stats.rx_invalid_hdr++;
 		return (LODP_ERR_BAD_PACKET);
 	}
@@ -280,7 +280,7 @@ mac_then_decrypt_ok:
 		}
 	}
 
-	/* It's not like I decrypted that packet for you or anything... baka. */
+	/* I-it's not like I decrypted that packet for you or anything... baka. */
 	return (LODP_ERR_BAD_PACKET);
 }
 
@@ -333,7 +333,7 @@ lodp_send_data_pkt(lodp_session *session, const uint8_t *payload, size_t len)
 	session->stats.gen_tx_packets++;
 	session->stats.tx_payload_bytes += len;
 
-	ret = encrypt_then_mac(session->ep, session, &session->tx_key, buf, 0);
+	ret = siv_encrypt(session->ep, session, &session->tx_key, buf, 0);
 	if (ret)
 		goto out;
 	ret = session_sendto(session, buf);
@@ -369,12 +369,10 @@ lodp_send_init_pkt(lodp_session *session)
 	pkt->hdr.type = PKT_INIT;
 	pkt->hdr.flags = 0;
 	pkt->hdr.length = htons(PKT_HDR_INIT_LEN);
-	memcpy(pkt->intro_mac_key, session->rx_key.mac_key.mac_key,
-	    sizeof(pkt->intro_mac_key));
-	memcpy(pkt->intro_bulk_key, session->rx_key.bulk_key.bulk_key,
-	    sizeof(pkt->intro_bulk_key));
+	lodp_siv_pack_key(pkt->intro_siv_key, &session->rx_key,
+	    sizeof(pkt->intro_siv_key));
 
-	ret = encrypt_then_mac(session->ep, session, &session->tx_key, buf, 0);
+	ret = siv_encrypt(session->ep, session, &session->tx_key, buf, 0);
 	if (ret)
 		goto out;
 	ret = session_sendto(session, buf);
@@ -387,7 +385,7 @@ out:
 
 int
 lodp_send_init_ack_pkt(lodp_endpoint *ep, const lodp_pkt_init *init_pkt, const
-    lodp_symmetric_key *key, const struct sockaddr *addr, socklen_t addr_len)
+    lodp_siv_key *key, const struct sockaddr *addr, socklen_t addr_len)
 {
 	lodp_pkt_init_ack *pkt;
 	lodp_buf *buf;
@@ -449,8 +447,8 @@ lodp_send_init_ack_pkt(lodp_endpoint *ep, const lodp_pkt_init *init_pkt, const
 	 *  * 92 <-> 316 byte  INIT ACKs
 	 */
 
-	ret = encrypt_then_mac(ep, NULL, key, buf, PKT_INIT_ACK_LEN +
-	    PKT_COOKIE_LEN_MAX);
+	ret = siv_encrypt(ep, NULL, key, buf, PKT_INIT_ACK_LEN +
+		PKT_COOKIE_LEN_MAX);
 	if (ret)
 		goto out;
 	ep->stats.tx_bytes += buf->len;
@@ -506,16 +504,14 @@ lodp_send_handshake_pkt(lodp_session *session)
 	pkt->hdr.type = PKT_HANDSHAKE;
 	pkt->hdr.flags = 0;
 	pkt->hdr.length = htons(PKT_HDR_HANDSHAKE_LEN + session->cookie_len);
-	memcpy(pkt->intro_mac_key, session->rx_key.mac_key.mac_key,
-	    sizeof(pkt->intro_mac_key));
-	memcpy(pkt->intro_bulk_key, session->rx_key.bulk_key.bulk_key,
-	    sizeof(pkt->intro_bulk_key));
+	lodp_siv_pack_key(pkt->intro_siv_key, &session->rx_key,
+	    sizeof(pkt->intro_siv_key));
 	memcpy(pkt->public_key,
 	    session->session_ecdh_keypair.public_key.public_key,
 	    sizeof(pkt->public_key));
 	memcpy(pkt->cookie, session->cookie, session->cookie_len);
 
-	ret = encrypt_then_mac(session->ep, session, &session->tx_key, buf, 0);
+	ret = siv_encrypt(session->ep, session, &session->tx_key, buf, 0);
 	if (ret)
 		goto out;
 	ret = session_sendto(session, buf);
@@ -527,8 +523,7 @@ out:
 
 
 int
-lodp_send_handshake_ack_pkt(lodp_session *session, const lodp_symmetric_key
-    *key)
+lodp_send_handshake_ack_pkt(lodp_session *session, const lodp_siv_key *key)
 {
 	lodp_pkt_handshake_ack *pkt;
 	lodp_buf *buf;
@@ -539,12 +534,6 @@ lodp_send_handshake_ack_pkt(lodp_session *session, const lodp_symmetric_key
 	assert(!session->is_initiator);
 	assert(!session->seen_peer_data);
 	assert(STATE_ESTABLISHED == session->state);
-
-	/*
-	 * Chances are we will need to send a HANDSHAKE packet, so be optimistic
-	 * and generate a HANDSHAKE ACK with everything but the validator, since
-	 * we can.
-	 */
 
 	buf = lodp_buf_alloc();
 	if (NULL == buf) {
@@ -566,7 +555,7 @@ lodp_send_handshake_ack_pkt(lodp_session *session, const lodp_symmetric_key
 	memcpy(pkt->digest, session->session_secret_verifier,
 	    LODP_MAC_DIGEST_LEN);
 
-	ret = encrypt_then_mac(session->ep, NULL, key, buf, 0);
+	ret = siv_encrypt(session->ep, NULL, key, buf, 0);
 	if (ret)
 		goto out;
 	ret = session_sendto(session, buf);
@@ -611,7 +600,7 @@ lodp_send_rekey_pkt(lodp_session *session)
 	if (ret)
 		goto out;
 
-	ret = encrypt_then_mac(session->ep, session, &session->tx_key, buf, 0);
+	ret = siv_encrypt(session->ep, session, &session->tx_key, buf, 0);
 	if (ret)
 		goto out;
 	ret = session_sendto(session, buf);
@@ -658,7 +647,7 @@ lodp_send_rekey_ack_pkt(lodp_session *session)
 	if (ret)
 		goto out;
 
-	ret = encrypt_then_mac(session->ep, session, &session->tx_key, buf, 0);
+	ret = siv_encrypt(session->ep, session, &session->tx_key, buf, 0);
 	if (ret)
 		goto out;
 	ret = session_sendto(session, buf);
@@ -688,20 +677,17 @@ lodp_rotate_cookie_key(lodp_endpoint *ep)
 
 
 static int
-encrypt_then_mac(lodp_endpoint *ep, lodp_session *session, const lodp_symmetric_key
-    *keys, lodp_buf *buf, uint16_t pad_clamp)
+siv_encrypt(lodp_endpoint *ep, const lodp_session *session, const lodp_siv_key
+    *key, lodp_buf *buf, uint16_t pad_clamp)
 {
-	lodp_hdr *pt_hdr, *ct_hdr;
+	lodp_hdr *hdr;
 	int ret;
 
 	assert(NULL != ep);
-	assert(NULL != keys);
+	assert(NULL != key);
 	assert(NULL != buf);
-	assert(buf->len > 0);
-	assert(buf->len <= LODP_MSS);
 
-	pt_hdr = (lodp_hdr *)buf->plaintext;
-	ct_hdr = (lodp_hdr *)buf->ciphertext;
+	hdr = (lodp_hdr *)buf->plaintext;
 
 	/*
 	 * Optionally allow the user to insert randomized padding here with a
@@ -716,79 +702,45 @@ encrypt_then_mac(lodp_endpoint *ep, lodp_session *session, const lodp_symmetric_
 			pad_clamp);
 		if (ret > 0) {
 			lodp_log(ep, LODP_LOG_DEBUG,
-			    "_encrypt_then_mac(): %d (+ %d) bytes",
+			    "_siv_encrypt(): %d (+ %d) bytes",
 			    buf->len, ret);
 			if (ret + buf->len > pad_clamp)
 				ret = pad_clamp - buf->len;
-			lodp_rand_bytes(((void *)pt_hdr) + buf->len, ret);
+			lodp_rand_bytes(((void *)hdr) + buf->len, ret);
 			buf->len += ret;
 		}
 	}
 
-	/* Encrypt */
-	lodp_rand_bytes(ct_hdr->iv, sizeof(ct_hdr->iv)); /* Random IV */
-	ret = lodp_encrypt(ct_hdr->iv + sizeof(ct_hdr->iv), &keys->bulk_key,
-		ct_hdr->iv, pt_hdr->iv + sizeof(pt_hdr->iv), buf->len -
-		PKT_TAG_LEN);
-	if (ret) {
-		lodp_log(ep, LODP_LOG_WARN,
-		    "_encrypt_then_mac(): Failed to encrypt (%d)", ret);
-		return (ret);
-	}
+	ret = lodp_siv_encrypt(buf->ciphertext, key, buf->plaintext +
+		LODP_SIV_TAG_LEN, buf->len, buf->len - LODP_SIV_TAG_LEN);
 
-	/* MAC */
-	ret = lodp_mac(ct_hdr->mac, ct_hdr->iv, &keys->mac_key, sizeof(ct_hdr->mac),
-		buf->len - sizeof(ct_hdr->mac));
-	if (ret)
-		lodp_log(ep, LODP_LOG_WARN,
-		    "_encrypt_then_mac(): Failed to MAC (%d)", ret);
 	return (ret);
 }
 
 
 static int
-mac_then_decrypt(lodp_endpoint *ep, const lodp_symmetric_key *keys,
-    lodp_buf *buf)
+siv_decrypt(lodp_endpoint *ep, const lodp_siv_key *key, lodp_buf *buf)
 {
-	uint8_t digest[LODP_MAC_DIGEST_LEN];
-	lodp_hdr *pt_hdr, *ct_hdr;
 	int ret;
 
-	assert(NULL != keys);
+	assert(NULL != ep);
+	assert(NULL != key);
 	assert(NULL != buf);
-	assert(buf->len > 0);
 
-	pt_hdr = (lodp_hdr *)buf->plaintext;
-	ct_hdr = (lodp_hdr *)buf->ciphertext;
-
-	/* MAC */
-	ret = lodp_mac(digest, ct_hdr->iv, &keys->mac_key, sizeof(ct_hdr->mac),
-		buf->len - sizeof(ct_hdr->mac));
-	if (ret) {
-		lodp_log(ep, LODP_LOG_WARN,
-		    "_mac_then_decrypt(): Failed to MAC (%d)", ret);
-		return (ret);
-	}
-
-	if (lodp_memeq(digest, ct_hdr->mac, sizeof(digest)))
+	ret = lodp_siv_decrypt(buf->plaintext + LODP_SIV_TAG_LEN, key,
+		buf->ciphertext, buf->len - LODP_SIV_TAG_LEN, buf->len);
+	if (ret)
 		return (LODP_ERR_INVALID_MAC);
 
 #ifdef TINFOIL
 	/* Check for possible IV duplication */
-	if (lodp_bf_a2(ep->iv_filter, ct_hdr->iv, sizeof(ct_hdr->iv))) {
+	if (lodp_bf_a2(ep->iv_filter, buf->ciphertext, LODP_SIV_TAG_LEN)) {
 		ep->stats.rx_duplicate_iv++;
 		return (LODP_ERR_DUP_IV);
 	}
 #endif
 
-	/* Decrypt */
-	ret = lodp_decrypt(pt_hdr->iv + sizeof(pt_hdr->iv), &keys->bulk_key,
-		ct_hdr->iv, ct_hdr->iv + sizeof(ct_hdr->iv), buf->len -
-		PKT_TAG_LEN);
-	if (ret)
-		lodp_log(ep, LODP_LOG_WARN,
-		    "_mac_then_decrypt(): Failed to decrypt (%d)", ret);
-	return (ret);
+	return (LODP_ERR_OK);
 }
 
 
@@ -797,7 +749,7 @@ generate_cookie(lodp_cookie *cookie, int prev_key, lodp_endpoint *ep,
     const lodp_pkt_raw *pkt, const struct sockaddr *addr,
     socklen_t addr_len)
 {
-	uint8_t blob[16 + 2 + LODP_MAC_KEY_LEN + LODP_BULK_KEY_LEN];
+	uint8_t blob[16 + 2 + LODP_SIV_KEY_LEN];
 	uint8_t *p;
 	time_t now = time(NULL);
 	int ret;
@@ -828,8 +780,7 @@ generate_cookie(lodp_cookie *cookie, int prev_key, lodp_endpoint *ep,
 	 * have seen positive proof of the fact that the peer has completed a
 	 * handshake.
 	 *
-	 * blob = Peer IP | Peer Port |  Peer Intro MAC Key |
-	 *        Peer Intro Bulk Key |
+	 * blob = Peer IP | Peer Port |  Peer SIV Key
 	 * cookie = BLAKE2s(endpoint_cookie_key, blob);
 	 */
 
@@ -849,12 +800,12 @@ generate_cookie(lodp_cookie *cookie, int prev_key, lodp_endpoint *ep,
 	} else
 		return (LODP_ERR_AFNOTSUPPORT);
 
-	/* Both the INIT and HANDSHAKE packets put the keys in the same place */
-	if (pkt->hdr.length < 4 + LODP_MAC_KEY_LEN + LODP_BULK_KEY_LEN)
+	/* Both the INIT and HANDSHAKE packets put the key in the same place */
+	if (pkt->hdr.length < 4 + LODP_SIV_KEY_LEN)
 		return (LODP_ERR_BAD_PACKET);
 
-	memcpy(p, pkt->payload, LODP_MAC_KEY_LEN + LODP_BULK_KEY_LEN);
-	p += LODP_MAC_KEY_LEN + LODP_BULK_KEY_LEN;
+	memcpy(p, pkt->payload, LODP_SIV_KEY_LEN);
+	p += LODP_SIV_KEY_LEN;
 
 	if (prev_key)
 		ret = lodp_mac(cookie->bytes, blob, &ep->prev_cookie_key,
@@ -868,8 +819,8 @@ generate_cookie(lodp_cookie *cookie, int prev_key, lodp_endpoint *ep,
 
 
 static int
-ntor_handshake(lodp_session *session, lodp_symmetric_key *init_key,
-    lodp_symmetric_key *resp_key, const lodp_ecdh_public_key *pub_key)
+ntor_handshake(lodp_session *session, lodp_siv_key *init_key,
+    lodp_siv_key *resp_key, const lodp_ecdh_public_key *pub_key)
 {
 	uint8_t shared_secret[LODP_MAC_DIGEST_LEN];
 	int ret;
@@ -924,7 +875,7 @@ out_err:
 	}
 
 	ret = lodp_derive_sessionkeys(init_key, resp_key, shared_secret,
-	    sizeof(shared_secret));
+		sizeof(shared_secret));
 	if (ret)
 		goto out_err;
 
@@ -1120,7 +1071,7 @@ static int
 on_init_pkt(lodp_endpoint *ep, const lodp_pkt_init *init_pkt, const lodp_buf
     *buf, const struct sockaddr *addr, socklen_t addr_len)
 {
-	lodp_symmetric_key key;
+	lodp_siv_key key;
 	int ret;
 
 	assert(NULL != ep);
@@ -1144,8 +1095,8 @@ on_init_pkt(lodp_endpoint *ep, const lodp_pkt_init *init_pkt, const lodp_buf
 	}
 
 	/* Pull out the peer's keys */
-	memcpy(key.mac_key.mac_key, init_pkt->intro_mac_key, sizeof(key.mac_key.mac_key));
-	memcpy(key.bulk_key.bulk_key, init_pkt->intro_bulk_key, sizeof(key.mac_key.mac_key));
+	lodp_siv_unpack_key(&key, init_pkt->intro_siv_key,
+	    sizeof(init_pkt->intro_siv_key));
 
 	ret = lodp_send_init_ack_pkt(ep, init_pkt, &key, addr, addr_len);
 
@@ -1159,7 +1110,7 @@ on_handshake_pkt(lodp_endpoint *ep, lodp_session *session, const
     lodp_pkt_handshake *hs_pkt, const struct sockaddr *addr, socklen_t addr_len)
 {
 	lodp_ecdh_public_key pub_key;
-	lodp_symmetric_key key;
+	lodp_siv_key key;
 	lodp_cookie cookie;
 	time_t now = time(NULL);
 	int should_callback;
@@ -1222,8 +1173,8 @@ bad_cookie:
 #endif
 
 	/* Pull out the peer's keys */
-	memcpy(key.mac_key.mac_key, hs_pkt->intro_mac_key, sizeof(key.mac_key.mac_key));
-	memcpy(key.bulk_key.bulk_key, hs_pkt->intro_bulk_key, sizeof(key.mac_key.mac_key));
+	lodp_siv_unpack_key(&key, hs_pkt->intro_siv_key,
+	    sizeof(hs_pkt->intro_siv_key));
 	memcpy(pub_key.public_key, hs_pkt->public_key, sizeof(pub_key.public_key));
 
 	/*
@@ -1294,7 +1245,7 @@ bad_cookie:
 
 	/* Generate a TCB */
 	ret = lodp_session_init(&session, NULL, ep, addr, addr_len,
-	    hs_pkt->public_key, sizeof(hs_pkt->public_key), NULL, 0, 0);
+		hs_pkt->public_key, sizeof(hs_pkt->public_key), NULL, 0, 0);
 	if (ret)
 		goto out_wipe;
 
@@ -1302,7 +1253,7 @@ bad_cookie:
 	session->cookie = calloc(1, COOKIE_LEN);
 	if (NULL == session->cookie) {
 		lodp_log_session(session, LODP_LOG_ERROR,
-			"_on_handshake_pkt(): OOM saving cookie");
+		    "_on_handshake_pkt(): OOM saving cookie");
 		ret = LODP_ERR_NOBUFS;
 		lodp_session_destroy(session);
 		goto out_wipe;
@@ -1456,7 +1407,7 @@ on_data_pkt(lodp_session *session, const lodp_pkt_data *pkt)
 	assert(PKT_DATA == pkt->hdr.type);
 
 	if ((STATE_ESTABLISHED != session->state) && (STATE_REKEY !=
-		    session->state)) {
+	    session->state)) {
 		lodp_log_session(session, LODP_LOG_DEBUG,
 		    "_on_data_pkt(): Received DATA in unexpected state (%d)",
 		    session->state);
@@ -1551,7 +1502,7 @@ on_init_ack_pkt(lodp_session *session, const lodp_pkt_init_ack *pkt)
 	cookie = calloc(1, cookie_len);
 	if (NULL == cookie) {
 		lodp_log_session(session, LODP_LOG_ERROR,
-			"_on_init_ack_pkt(): OOM saving cookie");
+		    "_on_init_ack_pkt(): OOM saving cookie");
 		session->state = STATE_ERROR;
 		session->ep->callbacks.on_connect_fn(session, LODP_ERR_NOBUFS);
 		return (LODP_ERR_NOBUFS);

@@ -88,6 +88,7 @@ lodp_term(void)
 	 * Note: If this is called with endpoints/sessions still present, the
 	 * calling code will break in hillarious ways.
 	 */
+
 	lodp_bufpool_free();
 	lodp_crypto_term();
 }
@@ -166,11 +167,11 @@ lodp_endpoint_listen(lodp_endpoint *ep, const uint8_t *priv_key,
 		return (ret);
 	}
 
-	/* Initialize Intro (Stegonographic) MAC/Symetric keys */
-	ret = lodp_derive_introkeys(&ep->intro_sym_keys, &ep->intro_ecdh_keypair.public_key);
+	/* Initialize Introductory SIV key */
+	ret = lodp_derive_introkey(&ep->intro_siv_key, &ep->intro_ecdh_keypair.public_key);
 	if (ret) {
 		lodp_log(ep, LODP_LOG_ERROR,
-		    "listen(): Failed to derive Stegonographic keys (%d)", ret);
+		    "listen(): Failed to derive Introductory SIV key (%d)", ret);
 		free_endpoint(ep);
 		return (ret);
 	}
@@ -319,14 +320,9 @@ lodp_endpoint_on_packet(lodp_endpoint *ep, const uint8_t *buf, size_t len,
 	/*
 	 * Validate the packet size, and ignore under/oversized packets.
 	 *
-	 * Note:
-	 * This lets us skip checking for the presence of the MAC/IV and TLV
-	 * header in the various inbound packet processing routines since at
-	 * least that much is guaranteed to be present in our inbound buffer.
-	 *
 	 * The Length field in the TLV header may be invalid, but it's not
-	 * possible to validate that until after the packet's MAC has been
-	 * validated and it has been decrypted.
+	 * possible to validate that until after the packet has been
+	 * decrypted/authenticated.
 	 */
 
 	if (len < PKT_HDR_LEN) {
@@ -338,7 +334,7 @@ lodp_endpoint_on_packet(lodp_endpoint *ep, const uint8_t *buf, size_t len,
 
 	if (len > LODP_MSS) {
 		lodp_log_addr(ep, LODP_LOG_DEBUG, addr,
-		    "on_packet(): Packet too large %dbytes ", len);
+		    "on_packet(): Packet too large %d bytes ", len);
 		ep->stats.rx_oversized++;
 		return (LODP_ERR_BAD_PACKET);
 	}
@@ -481,19 +477,19 @@ lodp_session_init(lodp_session **ssession, const void *ctxt, lodp_endpoint *ep,
 	session->state = STATE_INIT;
 	session->is_initiator = 1;
 
-	/* Derive the remote peer's intro keys */
-	ret = lodp_derive_introkeys(&session->tx_key, &session->remote_public_key);
+	/* Derive the remote peer's introdutory SIV key */
+	ret = lodp_derive_introkey(&session->tx_key, &session->remote_public_key);
 	if (ret) {
 		lodp_log(ep, LODP_LOG_ERROR,
-		    "connect(): Failed to derive peer Stegonographic keys (%d)",
+		    "connect(): Failed to derive peer Introductory SIV key (%d)",
 		    ret);
 		free_session(session);
 		return (ret);
 	}
 
-	/* Generate temporary stegonographic keys for the handshake */
+	/* Generate a temporary SIV key for the handshake */
 	lodp_rand_bytes(&session->rx_key.mac_key, sizeof(session->rx_key.mac_key));
-	lodp_rand_bytes(&session->rx_key.bulk_key, sizeof(session->rx_key.bulk_key));
+	lodp_rand_bytes(&session->rx_key.stream_key, sizeof(session->rx_key.stream_key));
 
 add_and_return:
 	RB_INSERT(lodp_ep_sessions, &ep->sessions, session);

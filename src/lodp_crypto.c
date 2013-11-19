@@ -101,6 +101,7 @@ lodp_gen_keypair(lodp_ecdh_keypair *keypair, const uint8_t *buf, size_t len)
 	if (NULL == buf) {
 		for (i = 0; i < 3; i++) {
 #ifdef TINFOIL
+
 			/*
 			 * Tor does something like this out of mistrust of the
 			 * PRNG, but it's relegated to a TINFOIL option since
@@ -111,7 +112,7 @@ lodp_gen_keypair(lodp_ecdh_keypair *keypair, const uint8_t *buf, size_t len)
 
 			lodp_rand_bytes(tmp, sizeof(tmp));
 			ret = blake2s(keypair->private_key.private_key, tmp,
-			    NULL, LODP_ECDH_PRIVATE_KEY_LEN, sizeof(tmp), 0);
+				NULL, LODP_ECDH_PRIVATE_KEY_LEN, sizeof(tmp), 0);
 			lodp_memwipe(tmp, sizeof(tmp));
 			if (ret)
 				goto out;
@@ -343,11 +344,11 @@ lodp_ntor(uint8_t *shared_secret, uint8_t *auth,
 	 */
 
 	ret = lodp_mac(shared_secret, secret_input, &t_key, shared_secret_len,
-	    secret_input_len);
+		secret_input_len);
 	if (ret)
 		goto out;
 	ret = lodp_mac(verify, secret_input, &t_verify, sizeof(verify),
-	    secret_input_len);
+		secret_input_len);
 	if (ret)
 		goto out;
 
@@ -367,39 +368,142 @@ out:
 	lodp_memwipe(secret_input, alloc_len);
 	lodp_memwipe(&secret, sizeof(secret));
 	lodp_memwipe(verify, sizeof(verify));
-	return (LODP_ERR_OK == ret) ? ret : LODP_ERR_BAD_HANDSHAKE;
+	return ((LODP_ERR_OK == ret) ? ret : LODP_ERR_BAD_HANDSHAKE);
 }
 
 
 int
-lodp_encrypt(uint8_t *ciphertext, const lodp_bulk_key *key, const uint8_t *iv,
-    const uint8_t *plaintext, size_t len)
+lodp_siv_pack_key(uint8_t *buf, const lodp_siv_key *key, size_t len)
 {
-	assert(NULL != ciphertext);
+	uint8_t *p;
+
+	assert(NULL != buf);
 	assert(NULL != key);
-	assert(NULL != iv);
-	assert(NULL != plaintext);
-	assert(len > 0);
 
-	assert(is_initialized);
+	assert(LODP_SIV_KEY_LEN == len);
 
-	xchacha((chacha_key *)key, (chacha_iv24 *)iv, plaintext, ciphertext,
-	    len, 20);
+	p = buf;
+	memcpy(p, key->mac_key.mac_key, sizeof(key->mac_key.mac_key));
+	p += sizeof(key->mac_key.mac_key);
+	memcpy(p, key->stream_key.stream_key, sizeof(key->stream_key.stream_key));
+#ifndef NDEBUG
+	p += sizeof(key->stream_key.stream_key);
+	assert(p - LODP_SIV_KEY_LEN == buf);
+#endif
 
 	return (LODP_ERR_OK);
 }
 
 
 int
-lodp_decrypt(uint8_t *plaintext, const lodp_bulk_key *key, const uint8_t *iv,
-    const uint8_t *ciphertext, size_t len)
+lodp_siv_unpack_key(lodp_siv_key *key, const uint8_t *buf, size_t len)
 {
-	return (lodp_encrypt(plaintext, key, iv, ciphertext, len));
+	const uint8_t *p;
+
+	assert(NULL != key);
+	assert(NULL != buf);
+
+	assert(LODP_SIV_KEY_LEN == len);
+
+	p = buf;
+
+	memcpy(key->mac_key.mac_key, p, sizeof(key->mac_key.mac_key));
+	p += sizeof(key->mac_key.mac_key);
+	memcpy(key->stream_key.stream_key, p, sizeof(key->stream_key.stream_key));
+#ifndef NDEBUG
+	p += sizeof(key->stream_key.stream_key);
+	assert(p - LODP_SIV_KEY_LEN == buf);
+#endif
+
+	return (LODP_ERR_OK);
 }
 
 
 int
-lodp_derive_introkeys(lodp_symmetric_key *sym_key, const lodp_ecdh_public_key
+lodp_siv_encrypt(uint8_t *ciphertext, const lodp_siv_key *key, const
+    uint8_t *plaintext, size_t ct_len, size_t pt_len)
+{
+	blake2s_state state;
+	int ret;
+
+	assert(NULL != ciphertext);
+	assert(NULL != key);
+	assert(NULL != plaintext);
+	assert(pt_len > 0);
+
+	if (ct_len != pt_len + LODP_SIV_TAG_LEN)
+		return (LODP_ERR_INVAL);
+
+	ret = LODP_ERR_INVAL;
+	if (blake2s_init_key(&state, LODP_SIV_IV_LEN, key->mac_key.mac_key,
+	    LODP_MAC_KEY_LEN))
+		goto out;
+
+	/* Generate the Associated Data (random 16 byte nonce) */
+	lodp_rand_bytes(ciphertext + LODP_SIV_IV_LEN, LODP_SIV_NONCE_LEN);
+
+	/* Generate the Synthetic IV */
+	blake2s_update(&state, ciphertext + LODP_SIV_IV_LEN,
+	    LODP_SIV_NONCE_LEN);
+	blake2s_update(&state, plaintext, pt_len);
+	blake2s_final(&state, ciphertext, LODP_SIV_IV_LEN);
+
+	/* Do the bulk encryption */
+	xchacha((chacha_key *)&key->stream_key, (chacha_iv24 *)ciphertext,
+	    plaintext, ciphertext + LODP_SIV_TAG_LEN, pt_len, 20);
+	ret = LODP_ERR_OK;
+
+out:
+	lodp_memwipe(&state, sizeof(state));
+	return (ret);
+}
+
+
+int
+lodp_siv_decrypt(uint8_t *plaintext, const lodp_siv_key *key, const uint8_t
+    *ciphertext, size_t pt_len, size_t ct_len)
+{
+	blake2s_state state;
+	uint8_t siv_cmp[LODP_SIV_IV_LEN];
+	int ret;
+
+	assert(NULL != plaintext);
+	assert(NULL != ciphertext);
+	assert(NULL != key);
+	assert(pt_len > 0);
+
+	if (ct_len != pt_len + LODP_SIV_TAG_LEN)
+		return (LODP_ERR_INVAL);
+
+	if (blake2s_init_key(&state, LODP_SIV_IV_LEN, key->mac_key.mac_key,
+	    LODP_MAC_KEY_LEN)) {
+		lodp_memwipe(&state, sizeof(state));
+		return (LODP_ERR_INVAL);
+	}
+
+	/* Decrypt first */
+	xchacha((chacha_key *)&key->stream_key, (chacha_iv24 *)ciphertext,
+	    ciphertext + LODP_SIV_TAG_LEN, plaintext, pt_len, 20);
+
+	/*
+	 * Authenticate the AD + plaintext by calculating the SIV and comparing
+	 * it with the one that was used in the decryption.
+	 */
+
+	blake2s_update(&state, ciphertext + LODP_SIV_IV_LEN,
+	    LODP_SIV_NONCE_LEN);
+	blake2s_update(&state, plaintext, pt_len);
+	blake2s_final(&state, siv_cmp, sizeof(siv_cmp));
+	ret = lodp_memeq(siv_cmp, ciphertext, LODP_SIV_IV_LEN);
+
+	lodp_memwipe(&state, sizeof(state));
+	lodp_memwipe(siv_cmp, sizeof(siv_cmp));
+	return ((ret == 0) ? LODP_ERR_OK : LODP_ERR_INVALID_MAC);
+}
+
+
+int
+lodp_derive_introkey(lodp_siv_key *siv_key, const lodp_ecdh_public_key
     *pub_key)
 {
 	static const uint8_t salt[] = {
@@ -407,10 +511,10 @@ lodp_derive_introkeys(lodp_symmetric_key *sym_key, const lodp_ecdh_public_key
 		'-', 'B', 'L', 'A', 'K', 'E', '2', 's'
 	};
 	uint8_t prk[LODP_MAC_DIGEST_LEN];
-	uint8_t okm[LODP_MAC_KEY_LEN + LODP_BULK_KEY_LEN];
+	uint8_t okm[LODP_SIV_KEY_LEN];
 	int ret;
 
-	assert(NULL != sym_key);
+	assert(NULL != siv_key);
 	assert(NULL != pub_key);
 
 	assert(is_initialized);
@@ -418,22 +522,20 @@ lodp_derive_introkeys(lodp_symmetric_key *sym_key, const lodp_ecdh_public_key
 	/*
 	 * Salt = "LODP-Intro-BLAKE2s"
 	 * PRK = LODP-Extract(Salt, PublicCurve25519Key)
-	 * IntroKey = LODP-Expand(PRK, Salt, 64)
-	 * IntroMacKey = IntroKey[0:31]
-	 * IntroXChaChaKey = IntroKey[32:63]
+	 * IntroductorySIVKey = LODP-Expand(PRK, Salt, 64)
 	 */
 
 	ret = lodp_extract(prk, salt, pub_key->public_key, sizeof(prk),
-	    sizeof(salt), LODP_ECDH_PUBLIC_KEY_LEN);
+		sizeof(salt), LODP_ECDH_PUBLIC_KEY_LEN);
 	if (ret)
 		goto out;
 	ret = lodp_expand(okm, prk, salt, sizeof(okm), sizeof(prk),
-	    sizeof(salt));
+		sizeof(salt));
 	if (ret)
 		goto out;
-	memcpy(sym_key->mac_key.mac_key, okm, LODP_MAC_KEY_LEN);
-	memcpy(sym_key->bulk_key.bulk_key, okm + LODP_MAC_KEY_LEN,
-	    LODP_BULK_KEY_LEN);
+	memcpy(siv_key->mac_key.mac_key, okm, LODP_MAC_KEY_LEN);
+	memcpy(siv_key->stream_key.stream_key, okm + LODP_MAC_KEY_LEN,
+	    LODP_STREAM_KEY_LEN);
 
 out:
 	lodp_memwipe(prk, sizeof(prk));
@@ -443,15 +545,15 @@ out:
 
 
 int
-lodp_derive_sessionkeys(lodp_symmetric_key *init_key, lodp_symmetric_key
-    *resp_key, const uint8_t *shared_secret, size_t shared_secret_len)
+lodp_derive_sessionkeys(lodp_siv_key *init_key, lodp_siv_key *resp_key,
+    const uint8_t *shared_secret, size_t shared_secret_len)
 {
 	static const uint8_t salt[] = {
 		'L', 'O', 'D', 'P', '-', 'S', 'e', 's', 's', 'i',
 		'o', 'n', '-', 'B', 'L', 'A', 'K', 'E', '2', 's'
 	};
 	const uint8_t *prk, *p;
-	uint8_t okm[2 * (LODP_MAC_KEY_LEN + LODP_BULK_KEY_LEN)];
+	uint8_t okm[2 * LODP_SIV_KEY_LEN];
 	int ret;
 
 	assert(NULL != init_key);
@@ -465,26 +567,25 @@ lodp_derive_sessionkeys(lodp_symmetric_key *init_key, lodp_symmetric_key
 	 * Salt = "LODP-Session-BLAKE2s
 	 * PRK = SharedSecret
 	 * SessionKey = LODP-Expand(PRK, Salt, 128)
-	 * InitiatorMacKey = SessionKey[0:31] (Client->Server)
-	 * InitiatorXChaChaKey = SessionKey[32:63]
-	 * ResponderMacKey = SessionKey[64:95] (Server->Client)
-	 * ResponderXChaChaKey = SessionKey[96:127]
+	 * InitiatorSIVKey = leftmost(SessionKey, LODP_SIV_KEY_LEN)
+	 * ResponderSIVKey = rightmost(SessionKey, LODP_SIV_KEY_LEN)
 	 */
 
 	prk = shared_secret;
 	ret = lodp_expand(okm, prk, salt, sizeof(okm), shared_secret_len,
-	    sizeof(salt));
+		sizeof(salt));
 	if (ret)
 		goto out;
 	p = okm;
 	memcpy(init_key->mac_key.mac_key, p, LODP_MAC_KEY_LEN);
 	p += LODP_MAC_KEY_LEN;
-	memcpy(init_key->bulk_key.bulk_key, p, LODP_BULK_KEY_LEN);
-	p += LODP_BULK_KEY_LEN;
+	memcpy(init_key->stream_key.stream_key, p, LODP_STREAM_KEY_LEN);
+	p += LODP_STREAM_KEY_LEN;
 	memcpy(resp_key->mac_key.mac_key, p, LODP_MAC_KEY_LEN);
 	p += LODP_MAC_KEY_LEN;
-	memcpy(resp_key->bulk_key.bulk_key, p, LODP_BULK_KEY_LEN);
-	p += LODP_BULK_KEY_LEN;
+	memcpy(resp_key->stream_key.stream_key, p, LODP_STREAM_KEY_LEN);
+	p += LODP_STREAM_KEY_LEN;
+	assert(p - sizeof(okm) == okm);
 
 out:
 	lodp_memwipe(okm, sizeof(okm));
@@ -608,14 +709,10 @@ lodp_expand(uint8_t *okm, const uint8_t *prk, const uint8_t *info,
 		if (blake2s_init_key(&state, sizeof(T), prk, prk_len))
 			goto out;
 		if (i > 1)
-			if (blake2s_update(&state, T, sizeof(T)))
-				goto out;
-		if (blake2s_update(&state, info, info_len))
-			goto out;
-		if (blake2s_update(&state, &i, sizeof(i)))
-			goto out;
-		if (blake2s_final(&state, T, sizeof(T)))
-			goto out;
+			blake2s_update(&state, T, sizeof(T));
+		blake2s_update(&state, info, info_len);
+		blake2s_update(&state, &i, sizeof(i));
+		blake2s_final(&state, T, sizeof(T));
 		memcpy(p, T, to_copy);
 		p += to_copy;
 		okm_len -= to_copy;

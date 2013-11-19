@@ -201,8 +201,8 @@ main(int argc, char *argv[])
 		fprintf(stderr, "ERROR: Public key mismatch???\n");
 		goto out_client;
 	}
-	if (memcmp(&server_ep->intro_sym_keys, &client_session->tx_key,
-	    sizeof(lodp_symmetric_key))) {
+	if (memcmp(&server_ep->intro_siv_key, &client_session->tx_key,
+	    sizeof(lodp_siv_key))) {
 		fprintf(stderr, "ERROR: Intro key mismatch???\n");
 		goto out_client;
 	}

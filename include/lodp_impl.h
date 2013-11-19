@@ -55,7 +55,7 @@ struct lodp_endpoint_s {
 	/* Things used for session initialization */
 	int			has_intro_keys;
 	lodp_ecdh_keypair	intro_ecdh_keypair;
-	lodp_symmetric_key	intro_sym_keys;
+	lodp_siv_key		intro_siv_key;
 	uint8_t *		node_id;
 	size_t			node_id_len;
 
@@ -69,8 +69,6 @@ struct lodp_endpoint_s {
 	lodp_bf *		cookie_filter;          /* Cookie replay */
 	lodp_bf *		iv_filter;              /* IV replay */
 #endif
-
-	/* Endpoint configuration */
 
 	/* Connection table */
 	RB_HEAD(lodp_ep_sessions, lodp_session_s) sessions;
@@ -106,11 +104,11 @@ struct lodp_session_s {
 	lodp_ecdh_keypair	session_ecdh_keypair;
 	lodp_ecdh_shared_secret session_secret;
 	uint8_t			session_secret_verifier[LODP_MAC_DIGEST_LEN];
-	lodp_symmetric_key	tx_key;
-	lodp_symmetric_key	rx_key;
+	lodp_siv_key		tx_key;
+	lodp_siv_key		rx_key;
 
-	lodp_symmetric_key	tx_rekey_key;
-	lodp_symmetric_key	rx_rekey_key;
+	lodp_siv_key		tx_rekey_key;
+	lodp_siv_key		rx_rekey_key;
 
 	/* Replay prevention */
 	uint32_t		tx_last_seq;
@@ -123,7 +121,7 @@ struct lodp_session_s {
 	uint8_t *		peer_node_id;
 	size_t			peer_node_id_len;
 
-	/* Connection Table */	
+	/* Connection Table */
 	uint64_t		peer_addr_hash;
 	RB_ENTRY(lodp_session_s) entry;
 };
