@@ -423,28 +423,11 @@ lodp_send_init_ack_pkt(lodp_endpoint *ep, const lodp_pkt_init *init_pkt, const
 	 * TODO:
 	 * Investigate if it's acceptable to clamp the size of the INIT ACK to
 	 * the INIT that triggered it's transmission.  Assuming someone sends a
-	 * INIT with 0 padding, the INIT ACKS generated would range from 92 to
-	 * 124 bytes in size, which is probably too small.  Not even sure a 192
-	 * byte range is acceptable with the current model.
+	 * INIT with 0 padding, the INIT ACKS generated would not be padded at
+	 * all, which seems suboptiomal.
 	 *
-	 * These are the relevant packet sizes and various tradeoffs:
-	 *  INIT (0 padding) -> 124 bytes
-	 *  INIT ACK (0 padding) -> 92 bytes
-	 *  LODP_MSS -> 1280 bytes
-	 *
-	 * No clamp:
-	 *  * 9.94:1 worst case amplification factor
-	 *  * 92 <-> 1280 byte INIT ACKs
-	 *
-	 * Clamp to INIT size:
-	 *  * 1:1 amplification factor
-	 *  * 92 <-> 124 - 1280 byte INIT ACKs
-	 *  Is the response is always smaller than the request a tell to DPI
-	 *  boxes?
-	 *
-	 * Clamp to arbitrary limit (CURRENT IMPLEMENTATION):
-	 *  * 2.55:1 worst case amplification factor
-	 *  * 92 <-> 316 byte  INIT ACKs
+	 * We currently make a tradeoff to limit the maximum amount of padding
+	 * added to a INIT ACK instead to something "sensible".
 	 */
 
 	ret = siv_encrypt(ep, NULL, key, buf, PKT_INIT_ACK_LEN +
