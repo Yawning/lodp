@@ -189,7 +189,6 @@ lodp_endpoint_listen(lodp_endpoint *ep, const uint8_t *priv_key,
 		return (LODP_ERR_NOBUFS);
 	}
 
-#ifdef TINFOIL
 	/* Initialize the cookie replay filter */
 	ep->cookie_filter = lodp_bf_init(14, 0.001); /* 1139 entries */
 	if (NULL == ep->cookie_filter) {
@@ -198,7 +197,6 @@ lodp_endpoint_listen(lodp_endpoint *ep, const uint8_t *priv_key,
 		free_endpoint(ep);
 		return (LODP_ERR_NOBUFS);
 	}
-#endif
 
 	lodp_log(ep, LODP_LOG_INFO, "listen(): Listening");
 
@@ -690,9 +688,9 @@ free_endpoint(lodp_endpoint *ep)
 #ifdef TINFOIL
 	if (NULL != ep->iv_filter)
 		lodp_bf_free(ep->iv_filter);
+#endif
 	if (NULL != ep->cookie_filter)
 		lodp_bf_free(ep->cookie_filter);
-#endif
 
 	lodp_memwipe(ep, sizeof(*ep));
 	free(ep);

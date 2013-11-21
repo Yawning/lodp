@@ -1161,7 +1161,6 @@ bad_cookie:
 	}
 
 	/* Check for cookie reuse */
-#ifdef TINFOIL
 	if (lodp_bf_a2_test(ep->cookie_filter, cookie.bytes, COOKIE_LEN)) {
 		lodp_log_addr(ep, LODP_LOG_WARN, addr,
 		    "_on_handshake_pkt(): HANDSHAKE cookie replay detected (%d)",
@@ -1170,7 +1169,6 @@ bad_cookie:
 		ret = LODP_ERR_DUP_COOKIE;
 		goto out;
 	}
-#endif
 
 	/* Pull out the peer's keys */
 	lodp_siv_unpack_key(&key, hs_pkt->intro_siv_key,
@@ -1429,10 +1427,8 @@ on_data_pkt(lodp_session *session, const lodp_pkt_data *pkt)
 		 * HANDSHAKE ACK.
 		 */
 		if (!session->is_initiator) {
-#ifdef TINFOIL
 			lodp_bf_a2(session->ep->cookie_filter, session->cookie,
 			    session->cookie_len);
-#endif
 			scrub_handshake_material(session);
 		}
 	}
