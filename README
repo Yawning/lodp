@@ -20,6 +20,7 @@ Domain" of various flavors:
  * Floodyberry's (X)ChaCha implementation
    (https://github.com/floodyberry/chacha-opt)
  * blake2 reference implementation
+   (https://github.com/BLAKE2/BLAKE2)
 
 Please see the COPYING file for information on licensing.
 
@@ -33,63 +34,96 @@ Building:
    state probably is not for you.
 
 Implementation notes:
- * If you are using a compiler that does not support C99, may the various cosmic
-   eldrich abominations have mercy on your soul, because LODP will not.
- * If you are using a compiler that does not understand GCC attributes, you will
-   need to edit the code.  Fortunately, the 3 compilers that matter (GCC,
-   clang, and ICC) all support this.
- * As usual I didn't test on Windows because doing development on that platform
-   makes me want to gouge my eyes out.  Patches welcome.
- * This is neither thread nor fork safe.  Making it thread safe isn't
-   particularly hard, but I didn't want to mess with doing locking in a portable
-   manner.
- * The session table currently is a single AVL tree keyed off the remote source
-   IP/port.  This could be changed to something better (Splitting the trees
-   based on address family may be a good idea).
- * The code does a fair amount of runtime sanity checking via assert.  If you
-   are feeling brave you can -DNDEBUG to make it go faster, though a network
-   library that's 2 copy on the send path and 3 copy on the receive path, with a
-   bunch of cryptography in the critical path is not going to bottle neck on
-   assertions.
- * The Maximum Segment Size is a compile time constant since the buffers used on
-   packet send/receive are preallocated in a pool.  The size is selected on the
-   somewhat conservative side for now, though is likely to increase before I
-   declare the code fit for general use.
- * The maximum number of supported sessions per source IP/port to a given
-   endpoint is 1.  This is not a LODP limitation but an implementation one.
-   Attempting to handshake while you already have a session established to a
-   given destination will result in the handshake failing, so don't.
- * Things that haven't been implemented yet:
-   * Support for REKEY/REKEY ACK packets.
+ * Build related:
+   * Your compiler must support C99.
+   * Your compiler must support GCC attributes.
+ * Library related:
+   * This library is NOT thread OR fork safe.
+   * The code does a fair amount of runtime sanity checking via assert.  If you
+     are feeling brave you can -DNDEBUG to make it go faster, though a network
+     library that's 2 copy on the send path and 3 copy on the receive path, with
+     a bunch of cryptography in the critical path is not going to bottle neck on
+     assertions.
+   * No testing was done on Windows, but the code should work with minor
+     header file changes on sufficiently recent versions of Windows.  Note that
+     Windows XP neither is sufficiently recent nor does it have inet_pton.
+ * Protocol notes (Optional behavior and etc):
+   * The Maximum Segment Size is a compile time constant since the buffers used
+     on packet send/receive are preallocated in a pool.  The size is selected on
+     the somewhat conservative side for now, though is likely to increase before
+     I declare the code fit for general use.
+   * The maximum number of supported sessions per source IP/port to a given
+     endpoint is 1.  This is not a LODP limitation but an implementation one.
+     Attempting to handshake while you already have a session established to a
+     given destination will result in the handshake failing, so don't.
+   * Amplification attacks are mitigated by limiting the amount of padding added
+     to INIT ACK packets.  There is still potential for amplification (dependng
+     on how much padding the application code decides to add), but the worst
+     case behavior is limited to 2.55:1.  See the gigantic comment in
+     lodp_send_init_ack().
+   * Replay protection is done differently depending on the packet type.
+     * INIT packets (2x 18232 entry bloom filters, 0.001 false postive rate, 64
+       KiB/endpoint)
+     * HANDSHAKE cookie reuse detection (2x 1139 etnry bloom filters, 0.001
+       false positive rate, 4 KiB/endpoint).  Note that cookie reuse is
+       impossible beyond the cookie's validity window (at most 60 sec after the
+       cookie is generated), so the relatively small filter should be
+       sufficient.
+     * DATA packets (Sequence Number/Sliding window)
+     * REKEY/REKEY ACK packets (Sequence Number/Sliding window)
+
+       INIT ACK/HANDSHAKE and HANDSHAKE ACK packets can be replayed, but as
+       they are silently dropped when the connection has completed handshaking,
+       the replayed packets will have 0 impact.
+
+   * Algorithmic complexity attacks are defended against as thus:
+     * The Session Table is a AVL tree built off the SipHash of the remote
+       address + port. (This may change to a tree for IPv4 and one for
+       IPv6).
+     * Rekeying is rate limited to once every 5 seconds at most per connection.
+       In the event that you are running LODP with connections that sustain >
+       2^31 packets within 5 seconds, this restricton can be removed from the
+       code.
+   * The receiver side reserves 1024 packets of the sequence number space to be
+     able to send REKEY ACKs.  Properly implemented clients will REKEY 2 billion
+     packets or so before the reserve window is hit.
+   * No attempt is made to minimise losses due to reordering around a
+     REKEY/REKEY ACK pair.  This will only be a problem for the initiator if a
+     lot of data reordered around the REKEY ACK.
 
 Note about -DTINFOIL:
  * Enabling Tinfoil Hat mode will add extra paranoia checking at the expense of
    memory and CPU.
-   * HANDSHAKE cookie reuse detection, with a 0.001 false positive rate (+~4
-     KiB/endpoint).  Note that cookie reuse is impossible beyond the cookie's
-     validity window (at most 60 sec after the cookie is generated).
-   * IV reuse detection, with a 0.01 false postive rate (+~2 MiB/endpoint).
-     The IV is 192 bits, so the odds of this happening under normal use are
-     astronomically low, and the detection method used can only maintain ~1.7
-     million packets with the current parameters.
+   * When generating Curve25519 keys, the output from the PRNG is passed through
+     BLAKE2s instead of being used directly.
+   * General packet replay detection with a 0.01 false positive rate (+~2
+     MiB/endpoint).  The odds of this happening under normal use are
+     astromically low, so enabling this will just lead to suprious
+     retransmissions whenever a false positive occurs.  It is also worth noting
+     that the bloomfilter can only maintain 875k to 1.7m packets.
 
 TODO:
- * Implement the rest of the packet types.
- * Data transfer statistics.
- * HEARTBEAT/HEARTBEAT ACK packets, like DATA packets should be treated as a
-   sign that the HANDSHAKE ACK packet was received by the initiator (as a
-   established session is present).
- * Implement tin foil hat related features.
-   * Rate limit INIT ACKs, to prevent amplification attacks (Probably not
-     important since the most a malicious peer can hope to get out of us
-     is 1 INIT ACK per spoofed INIT).
-   * Rate limit HEARTBEAT response rate to prevent abuse.
+ * Sync with spec
+   * Variable names?
+ * Nice to have tasks:
+   * Add more nice to have statistics.
+     * Connection count
+     * Various errors
+     * Handshake counts
+     * Add a generic dropped packet counter
+   * Move more constants to runtime tunables.
+     * MSS (Might not do this)
+     * Bloom filter sizes
+     * Cookie rotation period
+     * Rekey minimum interval
+   * It would be cool if the pre_encrypt and transmit hook had the packet type
+     as an argument.
  * Clean up/refactor the code to be easier to audit and more obviously correct.
    * Add more useful log messages (actually use more than the INFO level...)
-   * Add support for log level, so it's possible to avoid logging overhead
-     unless wanted without editing the applcation callback.
-   * Stop using LODP_MSS for most of the code, and use lodp_endpoint_get_mss()
-     instead.
+   * LODP_ERR_BAD_PACKET is returned when I should be returning something like
+     LODP_ERR_INVALID_STATE.
+   * The thing that tor does with annonymous structs for data that should be
+     wiped is kind of spiffy.
  * Performance related tasks:
    * Include the optimized curve25519-donna implementations.
    * Include the optimized blake2 implementations. (XXX: Is it worth saying
@@ -98,6 +132,10 @@ TODO:
      the bufferpool should only have ~2 allocations pending at most, unless the
      server code does something crazy with reentrant callbacks (lodp_test.c
      actually does this).
+   * Shrink the TCB size down.  Some things might not be worth it.
+     * Can shave off 336 bytes if the fields only used during handshake/rekey
+       were moved to the heap (Slightly less than 50%).
+     * Can shave off 54 bytes if peer_addr_str was calculated at log time.
 
 Eventually someone should do:
  * Write unit tests.
@@ -110,12 +148,23 @@ Might do:
    validation per inbound packet.
  * Think about allowing this to be thread safe.  That said, with the optimized
    crypto on good hardware a single core should be more than enough for a while.
- * At the expense of complicating the code, I could remove the memcpy from
-   lodp_endpoint_on_packet().
- * Revisit the memory/performance tradeoff currently being made by having a
-   gigantic TCB.
+ * Go even faster tweaks:
+   * Red paint job on the packets.
+   * At the expense of complicating the code, I could remove the memcpy from
+     lodp_endpoint_on_packet().
+   * If lodp_buf_allocate/free were exposed to the user code, I could probably
+     make this go even faster.
+   * Allow the initiator side to transmit data while REKEYing.
+   * Hold onto the previous keys after a REKEY succeeds to deal with reordered
+     packets.
  * Modify the third party stuff in src/ext so they don't pollute the namespace.
+ * Get rid of the dependency on inet_ntop() for Windows XP.
 
 Things that the protocol should have:
- * It probably is a good idea to rotate the intro keys.
  * Allow the user to transmit opportunistic data in the HANDSHAKE ACK?
+   * Shaves half a round trip for the reliability component....
+ * It would be nice if I could figure out a way to add RSTs without being
+   vulnerable to spoofing (That said, if the person can spoof RSTs, it's the
+   least of our worries because the stegonographic key is compromised).
+ * (MAYBE) Hard limit to the INIT ACK cookie length. (>= 32 bytes).
+ * (MAYBE) Hard limit to the node ID length. (>= 20 bytes).
