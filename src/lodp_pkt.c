@@ -369,8 +369,8 @@ lodp_send_init_pkt(lodp_session *session)
 	pkt->hdr.type = PKT_INIT;
 	pkt->hdr.flags = 0;
 	pkt->hdr.length = htons(PKT_HDR_INIT_LEN);
-	lodp_siv_pack_key(pkt->intro_siv_key, &session->rx_key,
-	    sizeof(pkt->intro_siv_key));
+	memcpy(pkt->intro_key_src, session->intro_key_src,
+	    sizeof(pkt->intro_key_src));
 
 	ret = siv_encrypt(session->ep, session, &session->tx_key, buf, 0);
 	if (ret)
@@ -504,8 +504,8 @@ lodp_send_handshake_pkt(lodp_session *session)
 	pkt->hdr.type = PKT_HANDSHAKE;
 	pkt->hdr.flags = 0;
 	pkt->hdr.length = htons(PKT_HDR_HANDSHAKE_LEN + session->cookie_len);
-	lodp_siv_pack_key(pkt->intro_siv_key, &session->rx_key,
-	    sizeof(pkt->intro_siv_key));
+	memcpy(pkt->intro_key_src, session->intro_key_src,
+	    sizeof(pkt->intro_key_src));
 	memcpy(pkt->public_key,
 	    session->session_ecdh_keypair.public_key.public_key,
 	    sizeof(pkt->public_key));
@@ -801,11 +801,11 @@ generate_cookie(lodp_cookie *cookie, int prev_key, lodp_endpoint *ep,
 		return (LODP_ERR_AFNOTSUPPORT);
 
 	/* Both the INIT and HANDSHAKE packets put the key in the same place */
-	if (pkt->hdr.length < 4 + LODP_SIV_KEY_LEN)
+	if (pkt->hdr.length < 4 + LODP_SIV_SRC_LEN)
 		return (LODP_ERR_BAD_PACKET);
 
-	memcpy(p, pkt->payload, LODP_SIV_KEY_LEN);
-	p += LODP_SIV_KEY_LEN;
+	memcpy(p, pkt->payload, LODP_SIV_SRC_LEN);
+	p += LODP_SIV_SRC_LEN;
 
 	if (prev_key)
 		ret = lodp_mac(cookie->bytes, blob, &ep->prev_cookie_key,
@@ -892,6 +892,9 @@ scrub_handshake_material(lodp_session *session)
 
 	lodp_log_session(session, LODP_LOG_DEBUG,
 	    "_scrub_handshake_material(): Purging handshake material");
+
+	/* Wipe the Init intro key source material */
+	lodp_memwipe(&session->intro_key_src, sizeof(session->intro_key_src));
 
 	/* Wipe the cookie */
 	if (NULL != session->cookie) {
@@ -1095,11 +1098,18 @@ on_init_pkt(lodp_endpoint *ep, const lodp_pkt_init *init_pkt, const lodp_buf
 	}
 
 	/* Pull out the peer's keys */
-	lodp_siv_unpack_key(&key, init_pkt->intro_siv_key,
-	    sizeof(init_pkt->intro_siv_key));
+	ret = lodp_derive_init_introkey(&key, init_pkt->intro_key_src,
+	    sizeof(init_pkt->intro_key_src));
+	if (ret) {
+		lodp_log_addr(ep, LODP_LOG_ERROR, addr,
+		    "_on_init_pkt(): Failed to derive peer key (%d)",
+		    ret);
+		goto out;
+	}
 
 	ret = lodp_send_init_ack_pkt(ep, init_pkt, &key, addr, addr_len);
 
+out:
 	lodp_memwipe(&key, sizeof(key));
 	return (ret);
 }
@@ -1171,8 +1181,14 @@ bad_cookie:
 	}
 
 	/* Pull out the peer's keys */
-	lodp_siv_unpack_key(&key, hs_pkt->intro_siv_key,
-	    sizeof(hs_pkt->intro_siv_key));
+	ret = lodp_derive_init_introkey(&key, hs_pkt->intro_key_src,
+	    sizeof(hs_pkt->intro_key_src));
+	if (ret) {
+		lodp_log_addr(ep, LODP_LOG_ERROR, addr,
+		    "_on_handshake_pkt(): Failed to derive peer key (%d)",
+		    ret);
+		goto out;
+	}
 	memcpy(pub_key.public_key, hs_pkt->public_key, sizeof(pub_key.public_key));
 
 	/*

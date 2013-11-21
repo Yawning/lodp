@@ -73,7 +73,7 @@ typedef struct __attribute__ ((__packed__)) {
 
 typedef struct __attribute__ ((__packed__)) {
 	lodp_hdr hdr;
-	uint8_t intro_siv_key[LODP_SIV_KEY_LEN];
+	uint8_t intro_key_src[LODP_SIV_SRC_LEN];
 } lodp_pkt_init;
 
 typedef struct __attribute__ ((__packed__)) {
@@ -83,7 +83,7 @@ typedef struct __attribute__ ((__packed__)) {
 
 typedef struct __attribute__ ((__packed__)) {
 	lodp_hdr hdr;
-	uint8_t intro_siv_key[LODP_SIV_KEY_LEN];
+	uint8_t intro_key_src[LODP_SIV_SRC_LEN];
 	uint8_t public_key[LODP_ECDH_PUBLIC_KEY_LEN];
 	uint8_t cookie[];
 } lodp_pkt_handshake;

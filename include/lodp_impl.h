@@ -52,7 +52,7 @@ struct lodp_endpoint_s {
 	lodp_callbacks		callbacks;      /* User callbacks */
 	lodp_endpoint_stats	stats;
 
-	/* Things used for session initialization */
+	/* Session initialization (Responder) */
 	int			has_intro_keys;
 	lodp_ecdh_keypair	intro_ecdh_keypair;
 	lodp_siv_key		intro_siv_key;
@@ -94,11 +94,14 @@ struct lodp_session_s {
 	int			is_initiator;
 	int			seen_peer_data;
 
-	/* Session initialization */
+	/* Session initialization (Common) */
 	lodp_ecdh_public_key	remote_public_key;
+
+	/* Session initialization (Initiator) */
 	uint8_t *		cookie;
 	uint16_t		cookie_len;
 	time_t			cookie_time;
+	uint8_t			intro_key_src[LODP_SIV_SRC_LEN];
 
 	/* Ephemeral Session Keys */
 	lodp_ecdh_keypair	session_ecdh_keypair;

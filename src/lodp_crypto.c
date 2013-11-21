@@ -503,8 +503,16 @@ lodp_siv_decrypt(uint8_t *plaintext, const lodp_siv_key *key, const uint8_t
 
 
 int
-lodp_derive_introkey(lodp_siv_key *siv_key, const lodp_ecdh_public_key
+lodp_derive_resp_introkey(lodp_siv_key *siv_key, const lodp_ecdh_public_key
     *pub_key)
+{
+	return (lodp_derive_init_introkey(siv_key, pub_key->public_key,
+	    LODP_ECDH_PUBLIC_KEY_LEN));
+}
+
+
+int
+lodp_derive_init_introkey(lodp_siv_key *siv_key, const uint8_t *src, size_t len)
 {
 	static const uint8_t salt[] = {
 		'L', 'O', 'D', 'P', '-', 'I', 'n', 't', 'r', 'o',
@@ -515,18 +523,18 @@ lodp_derive_introkey(lodp_siv_key *siv_key, const lodp_ecdh_public_key
 	int ret;
 
 	assert(NULL != siv_key);
-	assert(NULL != pub_key);
+	assert(NULL != src);
+	assert(LODP_SIV_SRC_LEN == len);
 
 	assert(is_initialized);
 
 	/*
 	 * Salt = "LODP-Intro-BLAKE2s"
-	 * PRK = LODP-Extract(Salt, PublicCurve25519Key)
+	 * PRK = LODP-Extract(Salt, SourceMaterial)
 	 * IntroductorySIVKey = LODP-Expand(PRK, Salt, 64)
 	 */
 
-	ret = lodp_extract(prk, salt, pub_key->public_key, sizeof(prk),
-		sizeof(salt), LODP_ECDH_PUBLIC_KEY_LEN);
+	ret = lodp_extract(prk, salt, src, sizeof(prk), sizeof(salt), len);
 	if (ret)
 		goto out;
 	ret = lodp_expand(okm, prk, salt, sizeof(okm), sizeof(prk),

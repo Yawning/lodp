@@ -83,6 +83,8 @@ void lodp_ecdh(lodp_ecdh_shared_secret *secret, const lodp_ecdh_private_key
 #define LODP_SIV_NONCE_LEN	16
 #define LODP_SIV_TAG_LEN	(LODP_SIV_IV_LEN + LODP_SIV_NONCE_LEN)
 
+#define LODP_SIV_SRC_LEN	32
+
 
 typedef struct {
 	uint8_t mac_key[LODP_MAC_KEY_LEN];
@@ -108,8 +110,10 @@ int lodp_siv_decrypt(uint8_t *plaintext, const lodp_siv_key *key, const uint8_t
     *ciphertext, size_t pt_len, size_t ct_len);
 
 /* LODP specific KDF/Handshake */
-int lodp_derive_introkey(lodp_siv_key *sym_key, const lodp_ecdh_public_key
+int lodp_derive_resp_introkey(lodp_siv_key *sym_key, const lodp_ecdh_public_key
     *pub_key);
+int lodp_derive_init_introkey(lodp_siv_key *sym_key, const uint8_t *src, size_t
+    len);
 int lodp_derive_sessionkeys(lodp_siv_key *init_key, lodp_siv_key *resp_key,
     const uint8_t *shared_secret, size_t shared_secret_len);
 int lodp_ntor(uint8_t *shared_secret, uint8_t *auth,

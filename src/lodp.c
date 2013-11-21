@@ -168,7 +168,7 @@ lodp_endpoint_listen(lodp_endpoint *ep, const uint8_t *priv_key,
 	}
 
 	/* Initialize Introductory SIV key */
-	ret = lodp_derive_introkey(&ep->intro_siv_key, &ep->intro_ecdh_keypair.public_key);
+	ret = lodp_derive_resp_introkey(&ep->intro_siv_key, &ep->intro_ecdh_keypair.public_key);
 	if (ret) {
 		lodp_log(ep, LODP_LOG_ERROR,
 		    "listen(): Failed to derive Introductory SIV key (%d)", ret);
@@ -476,7 +476,7 @@ lodp_session_init(lodp_session **ssession, const void *ctxt, lodp_endpoint *ep,
 	session->is_initiator = 1;
 
 	/* Derive the remote peer's introdutory SIV key */
-	ret = lodp_derive_introkey(&session->tx_key, &session->remote_public_key);
+	ret = lodp_derive_resp_introkey(&session->tx_key, &session->remote_public_key);
 	if (ret) {
 		lodp_log(ep, LODP_LOG_ERROR,
 		    "connect(): Failed to derive peer Introductory SIV key (%d)",
@@ -486,8 +486,15 @@ lodp_session_init(lodp_session **ssession, const void *ctxt, lodp_endpoint *ep,
 	}
 
 	/* Generate a temporary SIV key for the handshake */
-	lodp_rand_bytes(&session->rx_key.mac_key, sizeof(session->rx_key.mac_key));
-	lodp_rand_bytes(&session->rx_key.stream_key, sizeof(session->rx_key.stream_key));
+	lodp_rand_bytes(session->intro_key_src, sizeof(session->intro_key_src));
+	ret = lodp_derive_init_introkey(&session->rx_key, session->intro_key_src, sizeof(session->intro_key_src));
+	if (ret) {
+		lodp_log(ep, LODP_LOG_ERROR,
+		    "connect(): Failed to derive self Introductory SIV key (%d)",
+		    ret);
+		free_session(session);
+		return (ret);
+	}
 
 add_and_return:
 	RB_INSERT(lodp_ep_sessions, &ep->sessions, session);

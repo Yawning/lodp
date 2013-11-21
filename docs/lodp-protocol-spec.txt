@@ -265,18 +265,24 @@ Yawning Angel <yawning@schwanenlied.me>
     Identity key pair via the LODP KDF.  Used to obfuscate INIT and HANDSHAKE
     packets.
 
+    The process for deriving the Responder Introductory LODP_SIV key from a
+    given public component of a Responder Identity key via the LODP KDF is as
+    follows:
+
+      Salt = "LODP-Intro-BLAKE2s"
+      PRK = LODP-Extract(Salt, PublicCurve25519Key)
+      RespIntroductorySIVKey = LODP-Expand(PRK, Salt, HK_LEN + EK_LEN)
+
   Initiator Introductory LODP SIV Key:
 
     Ephemeral LODP SIV key randomly generated at connection establishment time.
-    Used to obfsucate INIT ACK and HANDSHAKE ACK packets, transmitted to the
-    responder in the INIT and HANDSHAKE packets.
+    Used to obfsucate INIT ACK and HANDSHAKE ACK packets.  Instead of
+    transmitting the keys directly, keying material is transmitting in the
+    INIT/HANDSHAKE packets and Responder uses the LODPK KDF to derive the keys.
 
-  The process for deriving the Responder Introductory LODP_SIV key from a given
-  public component of a Responder Identity key via the LODP KDF is as follows:
-
-    Salt = "LODP-Intro-BLAKE2s"
-    PRK = LODP-Extract(Salt, PublicCurve25519Key)
-    IntroductorySIVKey = LODP-Expand(PRK, Salt, HK_LEN + EK_LEN)
+      Salt = "LODP-Intro-BLAKE2s"
+      PRK = LODP-Extract(Salt, KeyingMaterial)
+      InitIntroductorySIVKey = LODP-Expand(PRK, Salt, HK_LEN + EK_LEN)
 
   As part of the LODP handshake, ephemeral session keys are generated and a key
   exchange is performed via the LODP ntor Handshake (See Section 5.2)
@@ -433,9 +439,10 @@ Yawning Angel <yawning@schwanenlied.me>
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
    |    Type = 1   |    Reserved   |             Length            |
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-   |              Initiator Introductory LODP-SIV Key              |
+   |                                                               |
+   +           Initiator Introductory LODP-SIV Key Source          +
                                   ...
-   +                     (HK_LEN + EK_LEN bytes)                   +
+   +                           (256 bits)                          +
    |                                                               |
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 
@@ -443,17 +450,18 @@ Yawning Angel <yawning@schwanenlied.me>
 
     Should be set to all '0's.
 
-  Initiator Introductory LODP-SIV Key: HK_LEN + EK_LEN bytes
+  Initiator Introductory LODP-SIV Key Source: 256 bits
 
-    The LODP-SIV key to use when sending the INIT ACK.
+    The keying material used to generated the SIV key to use when sending
+    the INIT ACK.
 
   The Responder's Introductory LODP-SIV key MUST be used for the
   LODP-SIV-Encrypt of transmitted INIT packets.  INIT packets that fail
   LODP-SIV-Decrypt on the Responder side with the Introductory LODP-SIV key
   MUST be discarded.
 
-  Implementations MUST randomly generate the LODP-SIV key for the Initiator
-  Introductory LODP-SIV key transmitted in a INIT packet.
+  Implementations MUST randomly generate the LODP-SIV key source material
+  uniquely for each session.
 
 7.3. Initiation Acknowledgement (INIT ACK)
 
@@ -479,9 +487,9 @@ Yawning Angel <yawning@schwanenlied.me>
     implementations SHOULD generate cookies that can be validated without
     maintaining per-connection state.
 
-  The Initiator Introductory LODP-SIV key received in the INIT packet that
-  triggered a given INIT ACK MUST be used for the LODP-SIV-Encrypt of INIT ACK
-  packets.
+  The Initiator Introductory LODP-SIV key derived from the keying material
+  received in the INIT packet that triggered a given INIT ACK MUST be used for
+  the LODP-SIV-Encrypt of INIT ACK packets.
 
 7.4. Handshake (HANDSHAKE)
 
@@ -492,9 +500,10 @@ Yawning Angel <yawning@schwanenlied.me>
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
    |    Type = 3   |    Reserved   |             Length            |
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-   |              Initiator Introductory LODP-SIV Key              |
+   |                                                               |
+   +           Initiator Introductory LODP-SIV Key Source          +
                                   ...
-   +                     (HK_LEN + EK_LEN bytes)                   +
+   +                           (256 bits)                          +
    |                                                               |
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
    |                                                               |
@@ -512,11 +521,11 @@ Yawning Angel <yawning@schwanenlied.me>
 
     Should be set to all '0's.
 
-  Initiator Introductory LODP-SIV Key: HK_LEN + EK_LEN bytes
+  Initiator Introductory LODP-SIV Key Source: 256 bits
 
-    The LODP-SIV key to use when sending the HANDSHAKE ACK.  It MUST be
-    identical to the Initiator Introductory LODP-SIV key transmitted in the
-    INIT packet.
+    The keying material used to generated the SIV key to use when sending
+    the HANDSHAKE ACK.  It MUST be identical to the Initiator Introductory
+    LODP-SIV keying material transmitted in the INIT packet.
 
   Initiator Curve25519 Public Key: 256 bits
 
@@ -568,9 +577,9 @@ Yawning Angel <yawning@schwanenlied.me>
     The digest (Auth) to used when verifying the remote identity as part of
     the LODP ntor Handshake.
 
-  The Initiator Introductory LODP-SIV key received in the HANDSHAKE packet
-  that triggered a given HANDSHAKE ACK MUST be used for the LODP-SIV-Encrypt
-  of HANDSHAKE ACK packets.
+  The Initiator Introductory LODP-SIV key derived from the keying material
+  received in the HANDSHAKE packet that triggered a given HANDSHAKE ACK MUST
+  be used for the LODP-SIV-Encrypt of HANDSHAKE ACK packets.
 
 7.6. Rekey (REKEY)
 
@@ -727,6 +736,9 @@ Yawning Angel <yawning@schwanenlied.me>
                                                [Create cryptographically
                                                 strong cookie]
 
+                                               [Derive Initiator Introductory
+                                                LODP-SIV key from INIT]
+
                                     <--------  INIT ACK (Initiator
                                                   Introductory LODP-SIV
                                                   key contained in INIT)
@@ -735,6 +747,9 @@ Yawning Angel <yawning@schwanenlied.me>
        Introductory LODP-SIV key)
 
                                                [Validate cookie]
+
+                                               [Derive Initiator Introductory
+                                                LODP-SIV key from HANDSHAKE]
 
                                                [Create TCB]
 
@@ -848,11 +863,10 @@ Yawning Angel <yawning@schwanenlied.me>
   potential for a LODP endpoint to be used as a host in an amplification
   attack by sending INIT packets with 0 padding with a spoofed source address.
   The INIT ACK packet sent in response can end up being larger than the INIT
-  that triggered it (though a INIT ACK with 0 padding using the cookie
-  generation mechanism in Appendix A will be smaller).  Implementations SHOULD
-  have suitable defenses against this attack, for example limiting the amount
-  of padding in a INIT ACK (to a fixed value or to that of the INIT that
-  triggered it or rate limiting the INIT ACK response rate.
+  that triggered it.  Implementations SHOULD have suitable defenses against
+  this attack, for example limiting the amount of padding in a INIT ACK (to a
+  fixed value or to that of the INIT that triggered it or rate limiting the
+  INIT ACK response rate.
 
   The protocol is protected against replay attacks by the use of a opaque
   cookie in the handshake, and the use of a sequence number in packets that are
@@ -925,7 +939,7 @@ Yawning Angel <yawning@schwanenlied.me>
 
   [RFC5297]      Kartkins, D., "Synthetic Initialization Vector (SIV)
                  Authenticated Encryption Using the Advanced Encryption
-		 Standard (AES)", RFC 5297, October 2008.
+                 Standard (AES)", RFC 5297, October 2008.
 
 15. Acknowledgements
 
@@ -950,12 +964,12 @@ Appendix A. Example Handshake Cookie Algorithm
 
   GenerateCookie(InitPacket, addr, port) -> Cookie
 
-  Buf = addr | port | InitPacket.InitiatorLODP-SIV-Key
+  Buf = addr | port | InitPacket.InitiatorLODP-SIV-KeySrc
   Cookie = H(CookieKey, buf)
 
   ValidateCookie(HandshakePacket, addr, port) -> Result
 
-  Buf = addr | port | HandshakePacket.InitiatorLODP-SIV-Key
+  Buf = addr | port | HandshakePacket.InitiatorLODP-SIV-KeySrc
   CookieCheck = H(CookieKey, Buf)
   if is_equal(CookieCheck, HandshakePacket.Cookie)
     result = PASS
