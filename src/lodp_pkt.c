@@ -489,8 +489,8 @@ lodp_send_handshake_pkt(lodp_session *session)
 	pkt->hdr.length = htons(PKT_HDR_HANDSHAKE_LEN + session->cookie_len);
 	memcpy(pkt->intro_key_src, session->intro_key_src,
 	    sizeof(pkt->intro_key_src));
-	memcpy(pkt->public_key,
-	    session->session_ecdh_keypair.public_key.public_key,
+	lodp_ecdh_pack_pubkey(pkt->public_key,
+	    &session->session_ecdh_keypair.public_key,
 	    sizeof(pkt->public_key));
 	memcpy(pkt->cookie, session->cookie, session->cookie_len);
 
@@ -532,8 +532,8 @@ lodp_send_handshake_ack_pkt(lodp_session *session, const lodp_siv_key *key)
 	pkt->hdr.type = PKT_HANDSHAKE_ACK;
 	pkt->hdr.flags = 0;
 	pkt->hdr.length = htons(PKT_HDR_HANDSHAKE_ACK_LEN);
-	memcpy(pkt->public_key,
-	    session->session_ecdh_keypair.public_key.public_key,
+	lodp_ecdh_pack_pubkey(pkt->public_key,
+	    &session->session_ecdh_keypair.public_key,
 	    sizeof(pkt->public_key));
 	memcpy(pkt->digest, session->session_secret_verifier,
 	    LODP_MAC_DIGEST_LEN);
@@ -575,8 +575,8 @@ lodp_send_rekey_pkt(lodp_session *session)
 	pkt->hdr.flags = 0;
 	pkt->hdr.length = htons(PKT_HDR_REKEY_LEN);
 	pkt->sequence_number = htonl(++session->tx_last_seq);
-	memcpy(pkt->public_key,
-	    session->session_ecdh_keypair.public_key.public_key,
+	lodp_ecdh_pack_pubkey(pkt->public_key,
+	    &session->session_ecdh_keypair.public_key,
 	    sizeof(pkt->public_key));
 
 	ret = session_tx_seq_ok(session);
@@ -620,8 +620,8 @@ lodp_send_rekey_ack_pkt(lodp_session *session)
 	pkt->hdr.flags = 0;
 	pkt->hdr.length = htons(PKT_HDR_REKEY_ACK_LEN);
 	pkt->sequence_number = htonl(++session->tx_last_seq);
-	memcpy(pkt->public_key,
-	    session->session_ecdh_keypair.public_key.public_key,
+	lodp_ecdh_pack_pubkey(pkt->public_key,
+	    &session->session_ecdh_keypair.public_key,
 	    sizeof(pkt->public_key));
 	memcpy(pkt->digest, session->session_secret_verifier,
 	    LODP_MAC_DIGEST_LEN);
@@ -1172,7 +1172,8 @@ bad_cookie:
 		    ret);
 		goto out;
 	}
-	memcpy(pub_key.public_key, hs_pkt->public_key, sizeof(pub_key.public_key));
+	lodp_ecdh_unpack_pubkey(&pub_key, hs_pkt->public_key,
+	    sizeof(hs_pkt->public_key));
 
 	/*
 	 * If a session exists, a few things can have happened:
@@ -1336,7 +1337,8 @@ on_rekey_pkt(lodp_session *session, const lodp_pkt_rekey *rk_pkt)
 	}
 
 	/* Extract the peer's new public key */
-	memcpy(pub_key.public_key, rk_pkt->public_key, sizeof(pub_key.public_key));
+	lodp_ecdh_unpack_pubkey(&pub_key, rk_pkt->public_key,
+	    sizeof(rk_pkt->public_key));
 
 	/*
 	 * Detect if the REKEY we just received is a retransmission due to a
@@ -1542,7 +1544,8 @@ on_handshake_ack_pkt(lodp_session *session, const lodp_pkt_handshake_ack *pkt)
 	}
 
 	/* Pull out the responder's public key */
-	memcpy(pub_key.public_key, pkt->public_key, sizeof(pub_key.public_key));
+	lodp_ecdh_unpack_pubkey(&pub_key, pkt->public_key,
+	    sizeof(pkt->public_key));
 
 	/* Complete our side of the modified ntor handshake */
 	ret = ntor_handshake(session, &session->tx_key, &session->rx_key,
@@ -1602,7 +1605,8 @@ on_rekey_ack_pkt(lodp_session *session, const lodp_pkt_rekey_ack *pkt)
 	}
 
 	/* Pull out the responder's public key */
-	memcpy(pub_key.public_key, pkt->public_key, sizeof(pub_key.public_key));
+	lodp_ecdh_unpack_pubkey(&pub_key, pkt->public_key,
+	    sizeof(pkt->public_key));
 
 	/* Complete our side of the modified ntor handshake */
 	ret = ntor_handshake(session, &session->tx_rekey_key,
