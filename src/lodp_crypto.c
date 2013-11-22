@@ -204,6 +204,34 @@ out:
 
 
 void
+lodp_ecdh_pack_pubkey(uint8_t *buf, const lodp_ecdh_public_key *pub_key,
+    size_t len)
+{
+	assert(NULL != pub_key);
+	assert(NULL != buf);
+	assert(LODP_ECDH_PUBLIC_KEY_LEN == len);
+
+	assert(is_initialized);
+
+	memcpy(buf, pub_key->public_key, LODP_ECDH_PUBLIC_KEY_LEN);
+}
+
+
+void
+lodp_ecdh_pack_privkey(uint8_t *buf, const lodp_ecdh_private_key *priv_key,
+    size_t len)
+{
+	assert(NULL != priv_key);
+	assert(NULL != buf);
+	assert(LODP_ECDH_PRIVATE_KEY_LEN == len);
+
+	assert(is_initialized);
+
+	memcpy(buf, priv_key->private_key, LODP_ECDH_PRIVATE_KEY_LEN);
+}
+
+
+void
 lodp_ecdh_unpack_pubkey(lodp_ecdh_public_key *pub_key, const uint8_t *buf,
     size_t len)
 {
@@ -230,7 +258,6 @@ lodp_ecdh_validate_pubkey(const lodp_ecdh_public_key *pub_key)
 	 * Horrific things happen with the ntor handshake variant that we use
 	 * if the point at infinity is selected as the public key.
 	 */
-
 	if (!lodp_memeq(pub_key->public_key, infpoint, LODP_ECDH_PUBLIC_KEY_LEN))
 		return (LODP_ERR_BAD_PUBKEY);
 
@@ -640,8 +667,9 @@ curve25519_generate_pubkey(lodp_ecdh_keypair *keypair)
 	/*
 	 * Ensure that the private key is well formed
 	 *
-	 * Note: curve25519-donna also will do this for us, but that's
-	 * possibly implementation dependent.
+	 * Note:
+	 * curve25519-donna also will do this for us, but that's possibly
+	 * implementation dependent.
 	 */
 
 	keypair->private_key.private_key[0] &= 248;

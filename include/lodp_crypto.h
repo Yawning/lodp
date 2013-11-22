@@ -65,6 +65,10 @@ typedef struct {
 
 int lodp_ecdh_gen_keypair(lodp_ecdh_keypair *keypair, const uint8_t *buf,
     size_t len);
+void lodp_ecdh_pack_pubkey(uint8_t *buf, const lodp_ecdh_public_key *pub_key,
+    size_t len);
+void lodp_ecdh_pack_privkey(uint8_t *buf, const lodp_ecdh_private_key
+    *priv_key, size_t len);
 void lodp_ecdh_unpack_pubkey(lodp_ecdh_public_key *pub_key, const uint8_t *buf,
     size_t len);
 int lodp_ecdh_validate_pubkey(const lodp_ecdh_public_key *pub_key);

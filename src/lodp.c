@@ -85,7 +85,8 @@ lodp_term(void)
 	/*
 	 * Destroy the global state
 	 *
-	 * Note: If this is called with endpoints/sessions still present, the
+	 * Note:
+	 * If this is called with endpoints/sessions still present, the
 	 * calling code will break in hillarious ways.
 	 */
 
@@ -145,9 +146,9 @@ lodp_endpoint_listen(lodp_endpoint *ep, const uint8_t *priv_key,
 		return (LODP_ERR_BADFD);
 	}
 
-	if (node_id_len > LODP_NODE_ID_LEN_MAX) {
-		lodp_log(ep, LODP_LOG_ERROR, "listen(): Node ID too long (%d)",
-		    node_id_len);
+	if ((0 == node_id_len) || (node_id_len > LODP_NODE_ID_LEN_MAX)) {
+		lodp_log(ep, LODP_LOG_ERROR,
+		    "listen(): Invalid Node ID length (%d)", node_id_len);
 		return (LODP_ERR_INVAL);
 	}
 
@@ -175,17 +176,20 @@ lodp_endpoint_listen(lodp_endpoint *ep, const uint8_t *priv_key,
 	}
 
 	/* Initialize Introductory SIV key */
-	ret = lodp_derive_resp_introkey(&ep->intro_siv_key, &ep->intro_ecdh_keypair.public_key);
+	ret = lodp_derive_resp_introkey(&ep->intro_siv_key,
+		&ep->intro_ecdh_keypair.public_key);
 	if (ret) {
 		lodp_log(ep, LODP_LOG_ERROR,
-		    "listen(): Failed to derive Introductory SIV key (%d)", ret);
+		    "listen(): Failed to derive Introductory SIV key (%d)",
+		    ret);
 		free_endpoint(ep);
 		return (ret);
 	}
 
 	/* Generate random secrets for the cookie */
 	lodp_rotate_cookie_key(ep);
-	memcpy(&ep->prev_cookie_key, &ep->cookie_key, sizeof(ep->prev_cookie_key));
+	memcpy(&ep->prev_cookie_key, &ep->cookie_key,
+	    sizeof(ep->prev_cookie_key));
 
 	/* Initialize the INIT replay filter */
 	ep->init_filter = lodp_bf_init(18, 0.001); /* 18232 entries */
@@ -271,9 +275,9 @@ lodp_generate_keypair(uint8_t *pub_key, size_t *pub_key_len, uint8_t *priv_key,
 	    (NULL != priv_key)) {
 		ret = lodp_ecdh_gen_keypair(&keypair, NULL, 0);
 		if (!ret) {
-			memcpy(pub_key, keypair.public_key.public_key,
+			lodp_ecdh_pack_pubkey(pub_key, &keypair.public_key,
 			    LODP_PUBLIC_KEY_LEN);
-			memcpy(priv_key, keypair.private_key.private_key,
+			lodp_ecdh_pack_privkey(priv_key, &keypair.private_key,
 			    LODP_PRIVATE_KEY_LEN);
 		}
 		lodp_memwipe(&keypair, sizeof(keypair));
@@ -377,16 +381,17 @@ lodp_connect(lodp_session **ssession, const void *ctxt, lodp_endpoint *ep,
 		return (LODP_ERR_INVAL);
 
 	if (NULL == ep->callbacks.on_connect_fn) {
-		lodp_log(ep, LODP_LOG_ERROR, "connect(): on_connect_fn == NULL");
+		lodp_log(ep, LODP_LOG_ERROR,
+		    "connect(): on_connect_fn == NULL");
 		return (LODP_ERR_BADFD);
 	}
 
-	if ((0 == node_id_len) || (LODP_ECDH_PUBLIC_KEY_LEN != pub_key_len))
+	if (LODP_ECDH_PUBLIC_KEY_LEN != pub_key_len)
 		return (LODP_ERR_INVAL);
 
-	if (node_id_len > LODP_NODE_ID_LEN_MAX) {
-		lodp_log(ep, LODP_LOG_ERROR, "connect(): Node ID too long (%d)",
-		    node_id_len);
+	if ((0 == node_id_len) || (node_id_len > LODP_NODE_ID_LEN_MAX)) {
+		lodp_log(ep, LODP_LOG_ERROR,
+		    "connect(): Invalid Node ID length (%d)", node_id_len);
 		return (LODP_ERR_INVAL);
 	}
 
@@ -483,7 +488,8 @@ lodp_session_init(lodp_session **ssession, const void *ctxt, lodp_endpoint *ep,
 	session->is_initiator = 1;
 
 	/* Derive the remote peer's introdutory SIV key */
-	ret = lodp_derive_resp_introkey(&session->tx_key, &session->remote_public_key);
+	ret = lodp_derive_resp_introkey(&session->tx_key,
+		&session->remote_public_key);
 	if (ret) {
 		lodp_log(ep, LODP_LOG_ERROR,
 		    "connect(): Failed to derive peer Introductory SIV key (%d)",
@@ -494,7 +500,8 @@ lodp_session_init(lodp_session **ssession, const void *ctxt, lodp_endpoint *ep,
 
 	/* Generate a temporary SIV key for the handshake */
 	lodp_rand_bytes(session->intro_key_src, sizeof(session->intro_key_src));
-	ret = lodp_derive_init_introkey(&session->rx_key, session->intro_key_src, sizeof(session->intro_key_src));
+	ret = lodp_derive_init_introkey(&session->rx_key,
+		session->intro_key_src, sizeof(session->intro_key_src));
 	if (ret) {
 		lodp_log(ep, LODP_LOG_ERROR,
 		    "connect(): Failed to derive self Introductory SIV key (%d)",
@@ -629,9 +636,7 @@ lodp_rekey(lodp_session *session)
 			return (LODP_ERR_AGAIN);
 
 		session->state = STATE_REKEY;
-	}
-
-	if (STATE_REKEY != session->state)
+	} else if (STATE_REKEY != session->state)
 		return (LODP_ERR_NOTCONN);
 
 	return (lodp_send_rekey_pkt(session));
