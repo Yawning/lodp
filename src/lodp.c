@@ -319,7 +319,6 @@ lodp_endpoint_on_packet(lodp_endpoint *ep, const uint8_t *buf, size_t len,
     const struct sockaddr *addr, socklen_t addr_len)
 {
 	lodp_session *session;
-	lodp_buf *pkt;
 	int ret;
 
 	if ((NULL == ep) || (NULL == buf) || (NULL == addr))
@@ -351,19 +350,8 @@ lodp_endpoint_on_packet(lodp_endpoint *ep, const uint8_t *buf, size_t len,
 
 	lodp_log_addr(ep, LODP_LOG_DEBUG, addr, "on_packet(): %d bytes", len);
 
-	/* Copy the packet and process it */
-	pkt = lodp_buf_alloc();
-	if (NULL == pkt) {
-		lodp_log(ep, LODP_LOG_ERROR,
-		    "on_packet(): Failed to allocate packet buffer");
-		return (LODP_ERR_NOBUFS);
-	}
-
-	memcpy(pkt->ciphertext, buf, len);
-	pkt->len = len;
 	session = session_find(ep, addr, addr_len);
-	ret = lodp_on_incoming_pkt(ep, session, pkt, addr, addr_len);
-	lodp_buf_free(pkt);
+	ret = lodp_on_incoming_pkt(ep, session, buf, len, addr, addr_len);
 
 	return (ret);
 }

@@ -60,7 +60,7 @@ typedef struct {
 static int siv_encrypt(lodp_endpoint *ep, const lodp_session *session,
     const lodp_siv_key *key, lodp_buf *buf, uint16_t pad_clamp);
 static int siv_decrypt(lodp_endpoint *ep, const lodp_siv_key *key,
-    lodp_buf *buf);
+    const uint8_t *ciphertext, size_t len, lodp_buf **bbuf);
 static int generate_cookie(lodp_cookie *cookie, int prev_key, lodp_endpoint *ep,
     const lodp_pkt_raw *pkt, const struct sockaddr *addr, socklen_t addr_len);
 static int ntor_handshake(lodp_session *session, lodp_siv_key *init_key,
@@ -89,15 +89,17 @@ static int on_rekey_ack_pkt(lodp_session *session, const lodp_pkt_rekey_ack
 
 
 int
-lodp_on_incoming_pkt(lodp_endpoint *ep, lodp_session *session, lodp_buf *buf,
-    const struct sockaddr *addr, socklen_t addr_len)
+lodp_on_incoming_pkt(lodp_endpoint *ep, lodp_session *session,
+    const uint8_t *ciphertext, size_t len, const struct sockaddr *addr,
+    socklen_t addr_len)
 {
 	lodp_hdr *hdr;
+	lodp_buf *buf;
 	int used_session_keys;
 	int ret;
 
 	assert(NULL != ep);
-	assert(NULL != buf);
+	assert(NULL != ciphertext);
 	assert(NULL != addr);
 	assert(addr_len > 0);
 
@@ -105,16 +107,15 @@ lodp_on_incoming_pkt(lodp_endpoint *ep, lodp_session *session, lodp_buf *buf,
 	 * SIV Decrypt
 	 *
 	 * Note:
-	 * Before copying the data from the user buffer (received off the wire)
-	 * to the lodp_buf, we validated the buffer length to ensure that at a
-	 * minimum, the IV/MAC and 4 byte common packet Type/Flags/Length header
-	 * is present.
+	 * Before calling this routine, we validiated the buffer length to
+	 * ensure that at a minimum, the IV/MAC and 4 byte common packet
+	 * Type/Flags/Length header is present.
 	 */
 
 	used_session_keys = 0;
 	if (NULL != session) {
 		/* Try the session keys first */
-		ret = siv_decrypt(ep, &session->rx_key, buf);
+		ret = siv_decrypt(ep, &session->rx_key, ciphertext, len, &buf);
 		if (!ret) {
 			used_session_keys = 1;
 			goto siv_decrypt_ok;
@@ -128,7 +129,7 @@ lodp_on_incoming_pkt(lodp_endpoint *ep, lodp_session *session, lodp_buf *buf,
 		if ((!session->is_initiator) && (STATE_REKEY == session->state)) {
 			assert(NULL != session->handshake);
 			ret = siv_decrypt(ep, &session->handshake->rx_rekey_key,
-				buf);
+				ciphertext, len, &buf);
 			if (!ret) {
 				used_session_keys = 1;
 				session_on_rekey(session);
@@ -150,7 +151,7 @@ lodp_on_incoming_pkt(lodp_endpoint *ep, lodp_session *session, lodp_buf *buf,
 		return (LODP_ERR_INVALID_MAC);
 	}
 
-	ret = siv_decrypt(ep, &ep->intro_siv_key, buf);
+	ret = siv_decrypt(ep, &ep->intro_siv_key, ciphertext, len, &buf);
 	if (ret) {
 siv_decrypt_fail:
 		if (LODP_ERR_INVALID_MAC == ret) {
@@ -239,25 +240,33 @@ siv_decrypt_ok:
 		switch (hdr->type)
 		{
 		case PKT_DATA:
-			return (on_data_pkt(session, (lodp_pkt_data *)hdr));
+			ret = on_data_pkt(session, (lodp_pkt_data *)hdr);
+			break;
 
 		case PKT_INIT_ACK:
-			return (on_init_ack_pkt(session, (lodp_pkt_init_ack *)hdr));
+			ret = on_init_ack_pkt(session, (lodp_pkt_init_ack *)hdr);
+			break;
 
 		case PKT_HANDSHAKE_ACK:
-			return (on_handshake_ack_pkt(session, (lodp_pkt_handshake_ack *)hdr));
+			ret = on_handshake_ack_pkt(session, (lodp_pkt_handshake_ack *)hdr);
+			break;
 
 		case PKT_REKEY:
-			return (on_rekey_pkt(session, (lodp_pkt_rekey *)hdr));
+			ret = on_rekey_pkt(session, (lodp_pkt_rekey *)hdr);
+			break;
 
 		case PKT_REKEY_ACK:
-			return (on_rekey_ack_pkt(session, (lodp_pkt_rekey_ack *)hdr));
+			ret = on_rekey_ack_pkt(session, (lodp_pkt_rekey_ack *)hdr);
+			break;
 
 		default:
+unknown_pkt_type:
+			/* I-it's not like I decrypted that packet for you or anything... baka. */
 			lodp_log_session(session, LODP_LOG_DEBUG,
 			    "_on_incoming_pkt(): Unexpected packet type (%x)",
 			    hdr->type);
 			ep->stats.rx_invalid_state++;
+			ret = LODP_ERR_BAD_PACKET;
 			break;
 		}
 	} else {
@@ -266,23 +275,21 @@ siv_decrypt_ok:
 		switch (hdr->type)
 		{
 		case PKT_INIT:
-			return (on_init_pkt(ep, (lodp_pkt_init *)hdr, buf, addr, addr_len));
+			ret = on_init_pkt(ep, (lodp_pkt_init *)hdr, buf, addr, addr_len);
+			break;
 
 		case PKT_HANDSHAKE:
-			return (on_handshake_pkt(ep, session, (lodp_pkt_handshake *)hdr,
-			       addr, addr_len));
+			ret = on_handshake_pkt(ep, session, (lodp_pkt_handshake *)hdr,
+			       addr, addr_len);
+			break;
 
 		default:
-			lodp_log_addr(ep, LODP_LOG_DEBUG, addr,
-			    "_on_incoming_pkt(): Unexpected packet type (%x)",
-			    hdr->type);
-			ep->stats.rx_invalid_state++;
-			break;
+			goto unknown_pkt_type;
 		}
 	}
 
-	/* I-it's not like I decrypted that packet for you or anything... baka. */
-	return (LODP_ERR_BAD_PACKET);
+	lodp_buf_free(buf);
+	return (ret);
 }
 
 
@@ -711,26 +718,44 @@ siv_encrypt(lodp_endpoint *ep, const lodp_session *session, const lodp_siv_key
 
 
 static int
-siv_decrypt(lodp_endpoint *ep, const lodp_siv_key *key, lodp_buf *buf)
+siv_decrypt(lodp_endpoint *ep, const lodp_siv_key *key,
+    const uint8_t *ciphertext, size_t len, lodp_buf **bbuf)
 {
 	int ret;
+	lodp_buf *buf;
 
 	assert(NULL != ep);
 	assert(NULL != key);
-	assert(NULL != buf);
+	assert(NULL != ciphertext);
+	assert(NULL != bbuf);
+	assert(len > sizeof(lodp_hdr));
 
+	buf = lodp_buf_alloc();
+	if (NULL == buf) {
+		lodp_log(ep, LODP_LOG_ERROR,
+		    "on_packet(): Failed to allocate packet buffer");
+		return (LODP_ERR_NOBUFS);
+	}
+	buf->len = len;
+
+	/* By the time this routine is called, len is somewhat validated */
 	ret = lodp_siv_decrypt(buf->plaintext + LODP_SIV_TAG_LEN, key,
-		buf->ciphertext, buf->len - LODP_SIV_TAG_LEN, buf->len);
-	if (ret)
+		ciphertext, len - LODP_SIV_TAG_LEN, len);
+	if (ret) {
+		lodp_buf_free(buf);
 		return (LODP_ERR_INVALID_MAC);
+	}
 
 #ifdef TINFOIL
 	/* Check for possible IV duplication */
-	if (lodp_bf_a2(ep->iv_filter, buf->ciphertext, LODP_SIV_TAG_LEN)) {
+	if (lodp_bf_a2(ep->iv_filter, ciphertext, LODP_SIV_TAG_LEN)) {
 		ep->stats.rx_duplicate_iv++;
+		lodp_buf_free(buf);
 		return (LODP_ERR_DUP_IV);
 	}
 #endif
+
+	*bbuf = buf;
 
 	return (LODP_ERR_OK);
 }

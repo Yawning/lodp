@@ -143,8 +143,9 @@ typedef struct __attribute__ ((__packed__)) {
 void lodp_rotate_cookie_key(lodp_endpoint *ep);
 
 /* Incoming packets */
-int lodp_on_incoming_pkt(lodp_endpoint *ep, lodp_session *session, lodp_buf
-    *buf, const struct sockaddr *addr, socklen_t addr_len);
+int lodp_on_incoming_pkt(lodp_endpoint *ep, lodp_session *session,
+    const uint8_t *ciphertext, size_t len, const struct sockaddr *addr,
+    socklen_t addr_len);
 
 /* Outgoing packets */
 int lodp_send_data_pkt(lodp_session *session, const uint8_t *buf, size_t len);

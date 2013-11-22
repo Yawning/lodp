@@ -142,8 +142,6 @@ Might do:
    crypto on good hardware a single core should be more than enough for a while.
  * Go even faster tweaks:
    * Red paint job on the packets.
-   * At the expense of complicating the code, I could remove the memcpy from
-     lodp_endpoint_on_packet().
    * If lodp_buf_allocate/free were exposed to the user code, I could probably
      make this go even faster.
    * Allow the initiator side to transmit data while REKEYing.
