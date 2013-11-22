@@ -40,27 +40,24 @@ Implementation notes:
  * Library related:
    * This library is NOT thread OR fork safe.
    * The code does a fair amount of runtime sanity checking via assert.  If you
-     are feeling brave you can -DNDEBUG to make it go faster, though a network
-     library that's 2 copy on the send path and 3 copy on the receive path, with
-     a bunch of cryptography in the critical path is not going to bottle neck on
-     assertions.
+     are feeling brave you can -DNDEBUG to make it go faster.
    * No testing was done on Windows, but the code should work with minor
      header file changes on sufficiently recent versions of Windows.  Note that
      Windows XP neither is sufficiently recent nor does it have inet_pton.
  * Protocol notes (Optional behavior and etc):
    * The Maximum Segment Size is a compile time constant since the buffers used
      on packet send/receive are preallocated in a pool.  The size is selected on
-     the somewhat conservative side for now, though is likely to increase before
-     I declare the code fit for general use.
+     the somewhat conservative side, based around IPv4 encapsulated IPv6 frames.
+     This could be increased, but it will break interoperability as the protocol
+     does not have a mechanism for negotiating MSS.
    * The maximum number of supported sessions per source IP/port to a given
      endpoint is 1.  This is not a LODP limitation but an implementation one.
      Attempting to handshake while you already have a session established to a
-     given destination will result in the handshake failing, so don't.
+     given destination will result in the handshake failing.
    * Amplification attacks are mitigated by limiting the amount of padding added
      to INIT ACK packets.  There is still potential for amplification (dependng
      on how much padding the application code decides to add), but the worst
-     case behavior is limited to 2.55:1.  See the gigantic comment in
-     lodp_send_init_ack().
+     case behavior is that the attacker gets an additional 224 bytes.
    * Replay protection is done differently depending on the packet type.
      * INIT packets (2x 18232 entry bloom filters, 0.001 false postive rate, 64
        KiB/endpoint)
@@ -92,7 +89,7 @@ Implementation notes:
      lot of data reordered around the REKEY ACK.
    * Node IDs are limited to 64 bytes.
    * The size of cookies that the the Initiator will process is limited to 256
-     bytes.  The cookies that are actually generated are 32 bytes.
+     bytes.  The cookies that this implementation generates are 32 bytes.
 
 Note about -DTINFOIL:
  * Enabling Tinfoil Hat mode will add extra paranoia checking at the expense of
@@ -106,8 +103,6 @@ Note about -DTINFOIL:
      that the bloomfilter can only maintain 875k to 1.7m packets.
 
 TODO:
- * Sync with spec
-   * Variable names?
  * Nice to have tasks:
    * Add more nice to have statistics.
      * Connection count
@@ -115,7 +110,6 @@ TODO:
      * Handshake counts
      * Add a generic dropped packet counter
    * Move more constants to runtime tunables.
-     * MSS (Might not do this)
      * Bloom filter sizes
      * Cookie rotation period
      * Rekey minimum interval
@@ -129,6 +123,7 @@ TODO:
    * Include the optimized curve25519-donna implementations.
    * Include the optimized blake2 implementations. (XXX: Is it worth saying
      "screw 32 bit system performance" and using truncated blake2b?)
+   * Include the optimized XChaCha/20 implementations.
    * Reconsider how lodp_buf* works.  With the current callback based design
      the bufferpool should only have ~2 allocations pending at most, unless the
      server code does something crazy with reentrant callbacks (lodp_test.c
@@ -156,10 +151,9 @@ Might do:
  * Get rid of the dependency on inet_ntop() for Windows XP.
 
 Things that the protocol should have:
- * Allow the user to transmit opportunistic data in the HANDSHAKE ACK?
-   * Shaves half a round trip for the reliability component....
  * It would be nice if I could figure out a way to add RSTs without being
-   vulnerable to spoofing (That said, if the person can spoof RSTs, it's the
-   least of our worries because the stegonographic key is compromised).
+   vulnerable to spoofing (That said, if the person can spoof RSTs, we've lost
+   anyway since they know it's a LODP endpoint).
+ * (MAYBE) The HANDSHAKE/HANDSHAKE ACK pair contain the MSS?
  * (MAYBE) Hard limit to the INIT ACK cookie length. (>= 32 bytes).
  * (MAYBE) Hard limit to the node ID length. (>= 20 bytes).
