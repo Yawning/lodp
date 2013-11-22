@@ -37,6 +37,8 @@
 #include "lodp_pkt.h"
 
 
+#define LODP_USE_ENCRYPT_DATA		1
+
 #define COOKIE_LEN			LODP_MAC_DIGEST_LEN
 #define COOKIE_ROTATE_INTERVAL		30
 #define COOKIE_GRACE_WINDOW		30
@@ -59,7 +61,7 @@ typedef struct {
 /* Packet/session related helpers */
 static int siv_encrypt(lodp_endpoint *ep, const lodp_session *session,
     const lodp_siv_key *key, lodp_buf **cciphertext, lodp_buf *plaintext,
-    uint16_t pad_clamp);
+    const uint8_t *payload, size_t payload_len, uint16_t pad_clamp);
 static int siv_decrypt(lodp_endpoint *ep, const lodp_siv_key *key,
     lodp_buf *plaintext, const uint8_t *ciphertext, size_t len);
 static int generate_cookie(lodp_cookie *cookie, int prev_key, lodp_endpoint *ep,
@@ -247,7 +249,7 @@ siv_decrypt_ok:
 			}
 
 			ret = on_handshake_pkt(ep, session, (lodp_pkt_handshake *)hdr,
-			       addr, addr_len);
+				addr, addr_len);
 			goto out;
 		}
 
@@ -295,7 +297,7 @@ unknown_pkt_type:
 
 		case PKT_HANDSHAKE:
 			ret = on_handshake_pkt(ep, session, (lodp_pkt_handshake *)hdr,
-			       addr, addr_len);
+				addr, addr_len);
 			break;
 
 		default:
@@ -349,7 +351,9 @@ lodp_send_data_pkt(lodp_session *session, const uint8_t *payload, size_t len)
 	pkt->hdr.flags = 0;
 	pkt->hdr.length = htons(PKT_HDR_DATA_LEN + len);
 	pkt->sequence_number = htonl(++session->tx_last_seq);
+#ifndef LODP_USE_ENCRYPT_DATA
 	memcpy(pkt->data, payload, len);
+#endif
 
 	ret = session_tx_seq_ok(session);
 	if (ret)
@@ -358,8 +362,13 @@ lodp_send_data_pkt(lodp_session *session, const uint8_t *payload, size_t len)
 	session->stats.gen_tx_packets++;
 	session->stats.tx_payload_bytes += len;
 
+#ifdef LODP_USE_ENCRYPT_DATA
 	ret = siv_encrypt(session->ep, session, &session->tx_key, &ciphertext,
-	    buf, 0);
+		buf, payload, len, 0);
+#else
+	ret = siv_encrypt(session->ep, session, &session->tx_key, &ciphertext,
+		buf, NULL, 0, 0);
+#endif
 	if (ret)
 		goto out;
 	ret = session_sendto(session, ciphertext);
@@ -402,7 +411,7 @@ lodp_send_init_pkt(lodp_session *session)
 	    sizeof(pkt->intro_key_src));
 
 	ret = siv_encrypt(session->ep, session, &session->tx_key, &ciphertext,
-	    buf, 0);
+		buf, NULL, 0, 0);
 	if (ret)
 		goto out;
 	ret = session_sendto(session, ciphertext);
@@ -462,8 +471,8 @@ lodp_send_init_ack_pkt(lodp_endpoint *ep, const lodp_pkt_init *init_pkt, const
 	 * added to a INIT ACK instead to something "sensible".
 	 */
 
-	ret = siv_encrypt(ep, NULL, key, &ciphertext, buf, PKT_INIT_ACK_LEN +
-		PKT_COOKIE_LEN_MAX);
+	ret = siv_encrypt(ep, NULL, key, &ciphertext, buf, NULL, 0,
+		PKT_INIT_ACK_LEN + PKT_COOKIE_LEN_MAX);
 	if (ret)
 		goto out;
 	ep->stats.tx_bytes += buf->len;
@@ -533,7 +542,7 @@ lodp_send_handshake_pkt(lodp_session *session)
 	memcpy(pkt->cookie, hs->cookie, hs->cookie_len);
 
 	ret = siv_encrypt(session->ep, session, &session->tx_key, &ciphertext,
-	    buf, 0);
+		buf, NULL, 0, 0);
 	if (ret)
 		goto out;
 	ret = session_sendto(session, ciphertext);
@@ -580,7 +589,8 @@ lodp_send_handshake_ack_pkt(lodp_session *session, const lodp_siv_key *key)
 	memcpy(pkt->digest, session->handshake->session_secret_verifier,
 	    LODP_MAC_DIGEST_LEN);
 
-	ret = siv_encrypt(session->ep, NULL, key, &ciphertext, buf, 0);
+	ret = siv_encrypt(session->ep, NULL, key, &ciphertext, buf, NULL, 0,
+		0);
 	if (ret)
 		goto out;
 	ret = session_sendto(session, ciphertext);
@@ -629,7 +639,7 @@ lodp_send_rekey_pkt(lodp_session *session)
 		goto out;
 
 	ret = siv_encrypt(session->ep, session, &session->tx_key, &ciphertext,
-	    buf, 0);
+		buf, NULL, 0, 0);
 	if (ret)
 		goto out;
 	ret = session_sendto(session, ciphertext);
@@ -679,7 +689,8 @@ lodp_send_rekey_ack_pkt(lodp_session *session)
 	if (ret)
 		goto out;
 
-	ret = siv_encrypt(session->ep, session, &session->tx_key, &ciphertext, buf, 0);
+	ret = siv_encrypt(session->ep, session, &session->tx_key, &ciphertext,
+		buf, NULL, 0, 0);
 	if (ret)
 		goto out;
 	ret = session_sendto(session, ciphertext);
@@ -712,10 +723,11 @@ lodp_rotate_cookie_key(lodp_endpoint *ep)
 static int
 siv_encrypt(lodp_endpoint *ep, const lodp_session *session,
     const lodp_siv_key *key, lodp_buf **cciphertext, lodp_buf *plaintext,
-    uint16_t pad_clamp)
+    const uint8_t *payload, size_t payload_len, uint16_t pad_clamp)
 {
 	lodp_buf *ciphertext;
 	lodp_hdr *hdr;
+	size_t pad_len;
 	int ret;
 
 	assert(NULL != ep);
@@ -735,6 +747,7 @@ siv_encrypt(lodp_endpoint *ep, const lodp_session *session,
 	 * Optionally allow the user to insert randomized padding here with a
 	 * with a callback.
 	 */
+	pad_len = 0;
 	if (NULL != ep->callbacks.pre_encrypt_fn) {
 		if ((0 == pad_clamp) || (pad_clamp > LODP_MSS))
 			pad_clamp = LODP_MSS;
@@ -747,15 +760,33 @@ siv_encrypt(lodp_endpoint *ep, const lodp_session *session,
 			    plaintext->len, ret);
 			if (ret + plaintext->len > pad_clamp)
 				ret = pad_clamp - plaintext->len;
-			lodp_rand_bytes(((void *)hdr) + plaintext->len, ret);
-			plaintext->len += ret;
+			pad_len = ret;
+			lodp_rand_bytes(((void *)hdr) + plaintext->len, pad_len);
+			plaintext->len += pad_len;
 		}
 	}
 
+#ifndef LODP_USE_ENCRYPT_DATA
+	assert(NULL == payload);
+	assert(0 == payload_len);
+#endif
+
 	ciphertext->len = plaintext->len;
-	ret = lodp_siv_encrypt(ciphertext->data, key, plaintext->data +
-		LODP_SIV_TAG_LEN, ciphertext->len, plaintext->len - LODP_SIV_TAG_LEN);
-	if (!ret) 
+	if (NULL == payload) {
+		assert(0 == payload_len);
+		ret = lodp_siv_encrypt(ciphertext->data, key, plaintext->data +
+			LODP_SIV_TAG_LEN, ciphertext->len, plaintext->len - LODP_SIV_TAG_LEN);
+	} else {
+		/*
+		 * Special case for DATA packets that avoids copying payload
+		 * into the lodp_buf
+		 */
+		ret = lodp_siv_encrypt_data(ciphertext->data, key,
+			plaintext->data + LODP_SIV_TAG_LEN, payload,
+			ciphertext->len, ciphertext->len - (LODP_SIV_TAG_LEN +
+			payload_len + pad_len), payload_len, pad_len);
+	}
+	if (!ret)
 		*cciphertext = ciphertext;
 
 	return (ret);

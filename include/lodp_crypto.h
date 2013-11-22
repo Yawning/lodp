@@ -108,6 +108,10 @@ int lodp_mac(uint8_t *digest, const uint8_t *buf, const lodp_mac_key *key,
     size_t digest_len, size_t len);
 int lodp_siv_encrypt(uint8_t *ciphertext, const lodp_siv_key *key,
     const uint8_t *plaintext, size_t ct_len, size_t pt_len);
+int
+lodp_siv_encrypt_data(uint8_t *ciphertext, const lodp_siv_key *key,
+    const uint8_t *pkt, const uint8_t *data, size_t ct_len, size_t pkt_len,
+    size_t data_len, size_t pad_len);
 int lodp_siv_decrypt(uint8_t *plaintext, const lodp_siv_key *key,
     const uint8_t *ciphertext, size_t pt_len, size_t ct_len);
 

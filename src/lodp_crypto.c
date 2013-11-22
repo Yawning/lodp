@@ -210,7 +210,6 @@ lodp_ecdh_pack_pubkey(uint8_t *buf, const lodp_ecdh_public_key *pub_key,
 	assert(NULL != pub_key);
 	assert(NULL != buf);
 	assert(LODP_ECDH_PUBLIC_KEY_LEN == len);
-
 	assert(is_initialized);
 
 	memcpy(buf, pub_key->public_key, LODP_ECDH_PUBLIC_KEY_LEN);
@@ -224,7 +223,6 @@ lodp_ecdh_pack_privkey(uint8_t *buf, const lodp_ecdh_private_key *priv_key,
 	assert(NULL != priv_key);
 	assert(NULL != buf);
 	assert(LODP_ECDH_PRIVATE_KEY_LEN == len);
-
 	assert(is_initialized);
 
 	memcpy(buf, priv_key->private_key, LODP_ECDH_PRIVATE_KEY_LEN);
@@ -238,7 +236,6 @@ lodp_ecdh_unpack_pubkey(lodp_ecdh_public_key *pub_key, const uint8_t *buf,
 	assert(NULL != pub_key);
 	assert(NULL != buf);
 	assert(LODP_ECDH_PUBLIC_KEY_LEN == len);
-
 	assert(is_initialized);
 
 	memcpy(pub_key->public_key, buf, LODP_ECDH_PUBLIC_KEY_LEN);
@@ -251,7 +248,6 @@ lodp_ecdh_validate_pubkey(const lodp_ecdh_public_key *pub_key)
 	const uint8_t infpoint[LODP_ECDH_PUBLIC_KEY_LEN] = { 0 };
 
 	assert(NULL != pub_key);
-
 	assert(is_initialized);
 
 	/*
@@ -272,7 +268,6 @@ lodp_ecdh(lodp_ecdh_shared_secret *secret, const lodp_ecdh_private_key
 	assert(NULL != secret);
 	assert(NULL != private_key);
 	assert(NULL != public_key);
-
 	assert(is_initialized);
 
 	curve25519_donna(secret->secret, private_key->private_key,
@@ -288,7 +283,6 @@ lodp_mac(uint8_t *digest, const uint8_t *buf, const lodp_mac_key *key, size_t
 	assert(NULL != buf);
 	assert(NULL != key);
 	assert(LODP_MAC_DIGEST_LEN == digest_len);
-
 	assert(is_initialized);
 
 	if (blake2s(digest, buf, key->mac_key, digest_len, len,
@@ -329,6 +323,7 @@ lodp_ntor(uint8_t *shared_secret, uint8_t *auth,
 	assert(node_id_len <= LODP_NODE_ID_LEN_MAX);
 	assert(LODP_MAC_DIGEST_LEN == shared_secret_len);
 	assert(LODP_MAC_DIGEST_LEN == auth_len);
+	assert(is_initialized);
 
 	/*
 	 * WARNING: Here be dragons
@@ -449,6 +444,7 @@ lodp_siv_encrypt(uint8_t *ciphertext, const lodp_siv_key *key, const
 	assert(NULL != key);
 	assert(NULL != plaintext);
 	assert(pt_len > 0);
+	assert(is_initialized);
 
 	if (ct_len != pt_len + LODP_SIV_TAG_LEN)
 		return (LODP_ERR_INVAL);
@@ -479,6 +475,78 @@ out:
 
 
 int
+lodp_siv_encrypt_data(uint8_t *ciphertext, const lodp_siv_key *key,
+    const uint8_t *pkt, const uint8_t *data, size_t ct_len, size_t hdr_len,
+    size_t data_len, size_t pad_len)
+{
+	struct {
+		blake2s_state	iv_state;
+		chacha_state	state;
+	} s;
+	uint8_t *p;
+	int ret;
+
+	assert(NULL != ciphertext);
+	assert(NULL != key);
+	assert(NULL != pkt);
+	assert(NULL != data);
+	assert(hdr_len > 0);
+	assert(is_initialized);
+
+	if (ct_len != hdr_len + LODP_SIV_TAG_LEN + data_len + pad_len)
+		return (LODP_ERR_INVAL);
+
+	/*
+	 * Getto scatter/gather variant of lodp_siv_encrypt() specifically for
+	 * handling DATA packets.
+	 *
+	 * Having this routine lets us save a memcpy() in the outgoing DATA
+	 * packet path.
+	 *
+	 * We assume that pkt looks like:
+	 *    header[hdr_len] (Will be 8 bytes for DATA)
+	 *    skip[data_len]
+	 *    padding[pad_len]
+	 *
+	 * We weave in data[data_len] instead of processing skip, to arrive at
+	 * the correct packet.
+	 */
+
+	ret = LODP_ERR_INVAL;
+	if (blake2s_init_key(&s.iv_state, LODP_SIV_IV_LEN, key->mac_key.mac_key,
+	    LODP_MAC_KEY_LEN))
+		goto out;
+
+	/* Generate the Associated Data (random 16 byte nonce) */
+	lodp_rand_bytes(ciphertext + LODP_SIV_IV_LEN, LODP_SIV_NONCE_LEN);
+
+	/* Generate the Synthetic IV */
+	blake2s_update(&s.iv_state, ciphertext + LODP_SIV_IV_LEN,
+	    LODP_SIV_NONCE_LEN);
+	blake2s_update(&s.iv_state, pkt, hdr_len);
+	blake2s_update(&s.iv_state, data, data_len);
+	blake2s_update(&s.iv_state, pkt + hdr_len + data_len, pad_len);
+	blake2s_final(&s.iv_state, ciphertext, LODP_SIV_IV_LEN);
+
+	/* Do the bulk encryption */
+	xchacha_init(&s.state, (chacha_key *)&key->stream_key,
+	    (chacha_iv24 *)ciphertext, 20);
+	p = ciphertext + LODP_SIV_TAG_LEN;
+	p += chacha_update(&s.state, pkt, p, hdr_len);
+	if (data_len > 0)
+		p += chacha_update(&s.state, data, p, data_len);
+	if (pad_len > 0)
+		p += chacha_update(&s.state, pkt + hdr_len + data_len, p, pad_len);
+	p += chacha_final(&s.state, p);
+	ret = LODP_ERR_OK;
+
+out:
+	lodp_memwipe(&s, sizeof(s));
+	return (ret);
+}
+
+
+int
 lodp_siv_decrypt(uint8_t *plaintext, const lodp_siv_key *key, const uint8_t
     *ciphertext, size_t pt_len, size_t ct_len)
 {
@@ -492,6 +560,7 @@ lodp_siv_decrypt(uint8_t *plaintext, const lodp_siv_key *key, const uint8_t
 	assert(NULL != ciphertext);
 	assert(NULL != key);
 	assert(pt_len > 0);
+	assert(is_initialized);
 
 	if (ct_len != pt_len + LODP_SIV_TAG_LEN)
 		return (LODP_ERR_INVAL);
@@ -543,7 +612,6 @@ lodp_derive_init_introkey(lodp_siv_key *siv_key, const uint8_t *src, size_t len)
 	assert(NULL != siv_key);
 	assert(NULL != src);
 	assert(LODP_SIV_SRC_LEN == len);
-
 	assert(is_initialized);
 
 	/*
@@ -582,7 +650,6 @@ lodp_derive_sessionkeys(lodp_siv_key *init_key, lodp_siv_key *resp_key,
 	assert(NULL != resp_key);
 	assert(NULL != shared_secret);
 	assert(LODP_MAC_DIGEST_LEN == shared_secret_len);
-
 	assert(is_initialized);
 
 	/*

@@ -124,10 +124,8 @@ TODO:
    * Include the optimized blake2 implementations. (XXX: Is it worth saying
      "screw 32 bit system performance" and using truncated blake2b?)
    * Include the optimized XChaCha/20 implementations.
-   * Reconsider how lodp_buf* works.  With the current callback based design
-     the bufferpool should only have ~2 allocations pending at most, unless the
-     server code does something crazy with reentrant callbacks (lodp_test.c
-     actually does this).
+   * If lodp_buf_free was exposed to the user code, I could probably make this
+     go even faster.
 
 Eventually someone should do:
  * Write unit tests.
@@ -142,8 +140,6 @@ Might do:
    crypto on good hardware a single core should be more than enough for a while.
  * Go even faster tweaks:
    * Red paint job on the packets.
-   * If lodp_buf_allocate/free were exposed to the user code, I could probably
-     make this go even faster.
    * Allow the initiator side to transmit data while REKEYing.
  * Modify the third party stuff in src/ext so they don't pollute the namespace.
  * Get rid of the dependency on inet_ntop() for Windows XP.
