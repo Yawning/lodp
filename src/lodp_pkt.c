@@ -1364,7 +1364,7 @@ on_rekey_pkt(lodp_session *session, const lodp_pkt_rekey *rk_pkt)
 		session->state = STATE_REKEY;
 
 	/* Generate a new ephemeral ECDH keypair */
-	if (lodp_gen_keypair(&session->session_ecdh_keypair, NULL, 0)) {
+	if (lodp_ecdh_gen_keypair(&session->session_ecdh_keypair, NULL, 0)) {
 		ret = LODP_ERR_CONNABORTED;
 		session->state = STATE_ERROR;
 		goto out;

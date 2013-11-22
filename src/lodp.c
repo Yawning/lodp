@@ -165,7 +165,8 @@ lodp_endpoint_listen(lodp_endpoint *ep, const uint8_t *priv_key,
 	memcpy(ep->node_id, node_id, node_id_len);
 
 	/* Initialize Curve25519 keys */
-	ret = lodp_gen_keypair(&ep->intro_ecdh_keypair, priv_key, priv_key_len);
+	ret = lodp_ecdh_gen_keypair(&ep->intro_ecdh_keypair, priv_key,
+		priv_key_len);
 	if (ret) {
 		lodp_log(ep, LODP_LOG_ERROR,
 		    "listen(): Failed to initalize Host key (%d)", ret);
@@ -268,7 +269,7 @@ lodp_generate_keypair(uint8_t *pub_key, size_t *pub_key_len, uint8_t *priv_key,
 	if ((*pub_key_len >= LODP_PUBLIC_KEY_LEN) &&
 	    (*priv_key_len >= LODP_PRIVATE_KEY_LEN) && (NULL != pub_key) &&
 	    (NULL != priv_key)) {
-		ret = lodp_gen_keypair(&keypair, NULL, 0);
+		ret = lodp_ecdh_gen_keypair(&keypair, NULL, 0);
 		if (!ret) {
 			memcpy(pub_key, keypair.public_key.public_key,
 			    LODP_PUBLIC_KEY_LEN);
@@ -445,7 +446,7 @@ lodp_session_init(lodp_session **ssession, const void *ctxt, lodp_endpoint *ep,
 	    session->peer_addr_str, sizeof(session->peer_addr_str));
 
 	/* Generate the Ephemeral Curve25519 keypair */
-	ret = lodp_gen_keypair(&session->session_ecdh_keypair, NULL, 0);
+	ret = lodp_ecdh_gen_keypair(&session->session_ecdh_keypair, NULL, 0);
 	if (ret) {
 		lodp_log(ep, LODP_LOG_ERROR,
 		    "_session_init(): Failed to generate session key (%d)",
@@ -455,15 +456,8 @@ lodp_session_init(lodp_session **ssession, const void *ctxt, lodp_endpoint *ep,
 	}
 
 	/* Store the peer's public key */
-	ret = lodp_gen_pubkey(&session->remote_public_key, pub_key,
-		pub_key_len);
-	if (ret) {
-		lodp_log(ep, LODP_LOG_ERROR,
-		    "_session_init(): Failed to save peer public key (%d)",
-		    ret);
-		free_session(session);
-		return (ret);
-	}
+	lodp_ecdh_unpack_pubkey(&session->remote_public_key, pub_key,
+	    pub_key_len);
 
 	if (!is_initiator) {
 		/* Responder side is done */
@@ -630,7 +624,8 @@ lodp_rekey(lodp_session *session)
 	/* Generate the new curve25519 keypair */
 	if (STATE_ESTABLISHED == session->state) {
 		/* If this fails, try again? */
-		if (lodp_gen_keypair(&session->session_ecdh_keypair, NULL, 0))
+		if (lodp_ecdh_gen_keypair(&session->session_ecdh_keypair,
+		    NULL, 0))
 			return (LODP_ERR_AGAIN);
 
 		session->state = STATE_REKEY;

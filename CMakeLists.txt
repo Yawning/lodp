@@ -9,6 +9,9 @@ endif()
 # Enable tinfoil hat mode
 add_definitions(-DTINFOIL)
 
+# Enable extra sanity checking
+add_definitions(-DDEBUG)
+
 # Make the compiler more anal and enable support for C99.
 add_definitions(-Wall -Werror -std=c99)
 
