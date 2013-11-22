@@ -53,6 +53,8 @@
 #define LODP_PRIVATE_KEY_LEN	32
 #define LODP_PUBLIC_KEY_LEN	32
 
+#define LODP_NODE_ID_LEN_MAX	64
+
 
 /* Error codes */
 #define LODP_ERR			0x00100000
@@ -106,8 +108,7 @@ typedef struct {
 	 * Keep in mind that liblodp will sanitize logs by default and that
 	 * logging incurs additional overhead.
 	 */
-	void (*log_fn)(const lodp_endpoint *, lodp_log_level, const
-	    char *);
+	void (*log_fn)(const lodp_endpoint *, lodp_log_level, const char *);
 
 	/*
 	 * Routine invoked by liblodp to do outgoing socket I/O.

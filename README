@@ -90,6 +90,9 @@ Implementation notes:
    * No attempt is made to minimise losses due to reordering around a
      REKEY/REKEY ACK pair.  This will only be a problem for the initiator if a
      lot of data reordered around the REKEY ACK.
+   * Node IDs are limited to 64 bytes.
+   * The size of cookies that the the Initiator will process is limited to 256
+     bytes.  The cookies that are actually generated are 32 bytes.
 
 Note about -DTINFOIL:
  * Enabling Tinfoil Hat mode will add extra paranoia checking at the expense of

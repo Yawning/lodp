@@ -31,7 +31,6 @@
 
 #include <string.h>
 #include <stdlib.h>
-#include <alloca.h>
 #include <assert.h>
 
 #include <ottery.h>
@@ -67,6 +66,11 @@ lodp_crypto_init(void)
 	/* Initialize the CSPRNG */
 	ret = ottery_init(NULL);
 	if (ret)
+		return (-1);
+
+	/* Validate that the XChaCha/20 implementaion works */
+	ret = chacha_check_validity();
+	if (!ret)
 		return (-1);
 
 	/* Sigh, lodp_rand_bytes asserts on this, so set it early */
@@ -246,7 +250,9 @@ lodp_ntor(uint8_t *shared_secret, uint8_t *auth,
 	};
 	lodp_ecdh_shared_secret secret;
 	uint8_t verify[LODP_MAC_DIGEST_LEN];
-	uint8_t *secret_input, *auth_input, *p;
+	uint8_t secret_input[LODP_ECDH_SECRET_LEN * 2 + LODP_NODE_ID_LEN_MAX +
+	    3 * LODP_ECDH_PUBLIC_KEY_LEN + sizeof(PROTOID)];
+	uint8_t *auth_input, *p;
 	size_t alloc_len;
 	size_t secret_input_len;
 	size_t auth_input_len;
@@ -258,6 +264,7 @@ lodp_ntor(uint8_t *shared_secret, uint8_t *auth,
 	assert(NULL != B);
 	assert(NULL != X);
 	assert(NULL != Y);
+	assert(node_id_len <= LODP_NODE_ID_LEN_MAX);
 	assert(LODP_MAC_DIGEST_LEN == shared_secret_len);
 	assert(LODP_MAC_DIGEST_LEN == auth_len);
 
@@ -280,7 +287,10 @@ lodp_ntor(uint8_t *shared_secret, uint8_t *auth,
 	    3 * LODP_ECDH_PUBLIC_KEY_LEN + sizeof(PROTOID);
 	auth_input_len = sizeof(verify) + node_id_len +
 	    3 * LODP_ECDH_PUBLIC_KEY_LEN + sizeof(PROTOID) + sizeof(RESPONDER);
-	p = secret_input = alloca(alloc_len);
+	p = secret_input;
+
+	assert(secret_input_len <= sizeof(secret_input));
+
 	if (NULL != b) {
 		/*
 		 * Responder:

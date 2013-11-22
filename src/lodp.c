@@ -145,6 +145,12 @@ lodp_endpoint_listen(lodp_endpoint *ep, const uint8_t *priv_key,
 		return (LODP_ERR_BADFD);
 	}
 
+	if (node_id_len > LODP_NODE_ID_LEN_MAX) {
+		lodp_log(ep, LODP_LOG_ERROR, "listen(): Node ID too long (%d)",
+		    node_id_len);
+		return (LODP_ERR_INVAL);
+	}
+
 	/* Endpoint that supports incoming connections */
 	ep->has_intro_keys = 1;
 
@@ -377,6 +383,12 @@ lodp_connect(lodp_session **ssession, const void *ctxt, lodp_endpoint *ep,
 	if ((0 == node_id_len) || (LODP_ECDH_PUBLIC_KEY_LEN != pub_key_len))
 		return (LODP_ERR_INVAL);
 
+	if (node_id_len > LODP_NODE_ID_LEN_MAX) {
+		lodp_log(ep, LODP_LOG_ERROR, "connect(): Node ID too long (%d)",
+		    node_id_len);
+		return (LODP_ERR_INVAL);
+	}
+
 	if ((addr_len > sizeof(struct sockaddr_storage)) ||
 	    ((AF_INET != addr->sa_family) && (AF_INET6 != addr->sa_family)))
 		return (LODP_ERR_AFNOTSUPPORT);
@@ -462,6 +474,7 @@ lodp_session_init(lodp_session **ssession, const void *ctxt, lodp_endpoint *ep,
 	/* Save the peer's node id used in the ntor handshake */
 	assert(NULL != node_id);
 	assert(0 != node_id_len);
+	assert(node_id_len <= LODP_NODE_ID_LEN_MAX);
 
 	session->peer_node_id = calloc(1, node_id_len);
 	if (NULL == session->peer_node_id) {
