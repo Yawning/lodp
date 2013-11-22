@@ -125,8 +125,6 @@ TODO:
    * Add more useful log messages (actually use more than the INFO level...)
    * LODP_ERR_BAD_PACKET is returned when I should be returning something like
      LODP_ERR_INVALID_STATE.
-   * The thing that tor does with annonymous structs for data that should be
-     wiped is kind of spiffy.
  * Performance related tasks:
    * Include the optimized curve25519-donna implementations.
    * Include the optimized blake2 implementations. (XXX: Is it worth saying
@@ -135,10 +133,6 @@ TODO:
      the bufferpool should only have ~2 allocations pending at most, unless the
      server code does something crazy with reentrant callbacks (lodp_test.c
      actually does this).
-   * Shrink the TCB size down.  Some things might not be worth it.
-     * Can shave off 336 bytes if the fields only used during handshake/rekey
-       were moved to the heap (Slightly less than 50%).
-     * Can shave off 54 bytes if peer_addr_str was calculated at log time.
 
 Eventually someone should do:
  * Write unit tests.
@@ -158,8 +152,6 @@ Might do:
    * If lodp_buf_allocate/free were exposed to the user code, I could probably
      make this go even faster.
    * Allow the initiator side to transmit data while REKEYing.
-   * Hold onto the previous keys after a REKEY succeeds to deal with reordered
-     packets.
  * Modify the third party stuff in src/ext so they don't pollute the namespace.
  * Get rid of the dependency on inet_ntop() for Windows XP.
 

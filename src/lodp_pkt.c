@@ -65,7 +65,6 @@ static int generate_cookie(lodp_cookie *cookie, int prev_key, lodp_endpoint *ep,
     const lodp_pkt_raw *pkt, const struct sockaddr *addr, socklen_t addr_len);
 static int ntor_handshake(lodp_session *session, lodp_siv_key *init_key,
     lodp_siv_key *resp_key, const lodp_ecdh_public_key *pub_key);
-static void scrub_handshake_material(lodp_session *session);
 
 static inline int session_sendto(lodp_session *session, const lodp_buf *buf);
 static inline int session_tx_seq_ok(lodp_session *session);
@@ -127,11 +126,13 @@ lodp_on_incoming_pkt(lodp_endpoint *ep, lodp_session *session, lodp_buf *buf,
 		 * try the new session keys
 		 */
 		if ((!session->is_initiator) && (STATE_REKEY == session->state)) {
-			ret = siv_decrypt(ep, &session->rx_rekey_key, buf);
+			assert(NULL != session->handshake);
+			ret = siv_decrypt(ep, &session->handshake->rx_rekey_key,
+				buf);
 			if (!ret) {
 				used_session_keys = 1;
 				session_on_rekey(session);
-				scrub_handshake_material(session);
+				lodp_handshake_free(session);
 				goto siv_decrypt_ok;
 			} else if (LODP_ERR_INVALID_MAC != ret)
 				goto siv_decrypt_fail;
@@ -352,6 +353,7 @@ lodp_send_init_pkt(lodp_session *session)
 	int ret;
 
 	assert(NULL != session);
+	assert(NULL != session->handshake);
 	assert(session->is_initiator);
 	assert(STATE_INIT == session->state);
 
@@ -369,7 +371,7 @@ lodp_send_init_pkt(lodp_session *session)
 	pkt->hdr.type = PKT_INIT;
 	pkt->hdr.flags = 0;
 	pkt->hdr.length = htons(PKT_HDR_INIT_LEN);
-	memcpy(pkt->intro_key_src, session->intro_key_src,
+	memcpy(pkt->intro_key_src, session->handshake->intro_key_src,
 	    sizeof(pkt->intro_key_src));
 
 	ret = siv_encrypt(session->ep, session, &session->tx_key, buf, 0);
@@ -449,27 +451,31 @@ lodp_send_handshake_pkt(lodp_session *session)
 {
 	lodp_pkt_handshake *pkt;
 	lodp_buf *buf;
+	lodp_handshake_data *hs;
 	time_t now = time(NULL);
 	int ret;
 
 	assert(NULL != session);
+	assert(NULL != session->handshake);
 	assert(session->is_initiator);
 	assert(STATE_HANDSHAKE == session->state);
+
+	hs = session->handshake;
 
 	/*
 	 * If it has been long enough that the cookie expired, it is neccecary
 	 * to send an INIT packet instead
 	 */
 
-	if ((session->cookie_time + COOKIE_ROTATE_INTERVAL < now) && (NULL !=
-	    session->cookie)) {
+	if ((hs->cookie_time + COOKIE_ROTATE_INTERVAL < now) &&
+	    (NULL != hs->cookie)) {
 		lodp_log_session(session, LODP_LOG_WARN,
 		    "_send_handshake_pkt(): Cookie expired, falling back to INIT");
 		session->state = STATE_INIT;
-		lodp_memwipe(session->cookie, session->cookie_len);
-		free(session->cookie);
-		session->cookie = NULL;
-		session->cookie_len = 0;
+		lodp_memwipe(hs->cookie, hs->cookie_len);
+		free(hs->cookie);
+		hs->cookie = NULL;
+		hs->cookie_len = 0;
 		return (lodp_send_init_pkt(session));
 	}
 
@@ -480,19 +486,19 @@ lodp_send_handshake_pkt(lodp_session *session)
 		return (LODP_ERR_NOBUFS);
 	}
 
-	buf->len = PKT_HANDSHAKE_LEN + session->cookie_len;
+	buf->len = PKT_HANDSHAKE_LEN + hs->cookie_len;
 	assert(buf->len < LODP_MSS);
 
 	pkt = (lodp_pkt_handshake *)buf->plaintext;
 	pkt->hdr.type = PKT_HANDSHAKE;
 	pkt->hdr.flags = 0;
-	pkt->hdr.length = htons(PKT_HDR_HANDSHAKE_LEN + session->cookie_len);
-	memcpy(pkt->intro_key_src, session->intro_key_src,
+	pkt->hdr.length = htons(PKT_HDR_HANDSHAKE_LEN + hs->cookie_len);
+	memcpy(pkt->intro_key_src, hs->intro_key_src,
 	    sizeof(pkt->intro_key_src));
 	lodp_ecdh_pack_pubkey(pkt->public_key,
-	    &session->session_ecdh_keypair.public_key,
+	    &hs->session_keypair.public_key,
 	    sizeof(pkt->public_key));
-	memcpy(pkt->cookie, session->cookie, session->cookie_len);
+	memcpy(pkt->cookie, hs->cookie, hs->cookie_len);
 
 	ret = siv_encrypt(session->ep, session, &session->tx_key, buf, 0);
 	if (ret)
@@ -513,6 +519,7 @@ lodp_send_handshake_ack_pkt(lodp_session *session, const lodp_siv_key *key)
 	int ret;
 
 	assert(NULL != session);
+	assert(NULL != session->handshake);
 	assert(NULL != key);
 	assert(!session->is_initiator);
 	assert(!session->seen_peer_data);
@@ -533,9 +540,9 @@ lodp_send_handshake_ack_pkt(lodp_session *session, const lodp_siv_key *key)
 	pkt->hdr.flags = 0;
 	pkt->hdr.length = htons(PKT_HDR_HANDSHAKE_ACK_LEN);
 	lodp_ecdh_pack_pubkey(pkt->public_key,
-	    &session->session_ecdh_keypair.public_key,
+	    &session->handshake->session_keypair.public_key,
 	    sizeof(pkt->public_key));
-	memcpy(pkt->digest, session->session_secret_verifier,
+	memcpy(pkt->digest, session->handshake->session_secret_verifier,
 	    LODP_MAC_DIGEST_LEN);
 
 	ret = siv_encrypt(session->ep, NULL, key, buf, 0);
@@ -557,6 +564,7 @@ lodp_send_rekey_pkt(lodp_session *session)
 	int ret;
 
 	assert(NULL != session);
+	assert(NULL != session->handshake);
 	assert(session->is_initiator);
 	assert(STATE_REKEY == session->state);
 
@@ -576,7 +584,7 @@ lodp_send_rekey_pkt(lodp_session *session)
 	pkt->hdr.length = htons(PKT_HDR_REKEY_LEN);
 	pkt->sequence_number = htonl(++session->tx_last_seq);
 	lodp_ecdh_pack_pubkey(pkt->public_key,
-	    &session->session_ecdh_keypair.public_key,
+	    &session->handshake->session_keypair.public_key,
 	    sizeof(pkt->public_key));
 
 	ret = session_tx_seq_ok(session);
@@ -602,6 +610,7 @@ lodp_send_rekey_ack_pkt(lodp_session *session)
 	int ret;
 
 	assert(NULL != session);
+	assert(NULL != session->handshake);
 	assert(!session->is_initiator);
 	assert(STATE_REKEY == session->state);
 
@@ -621,9 +630,9 @@ lodp_send_rekey_ack_pkt(lodp_session *session)
 	pkt->hdr.length = htons(PKT_HDR_REKEY_ACK_LEN);
 	pkt->sequence_number = htonl(++session->tx_last_seq);
 	lodp_ecdh_pack_pubkey(pkt->public_key,
-	    &session->session_ecdh_keypair.public_key,
+	    &session->handshake->session_keypair.public_key,
 	    sizeof(pkt->public_key));
-	memcpy(pkt->digest, session->session_secret_verifier,
+	memcpy(pkt->digest, session->handshake->session_secret_verifier,
 	    LODP_MAC_DIGEST_LEN);
 
 	ret = session_tx_seq_ok(session);
@@ -805,55 +814,60 @@ static int
 ntor_handshake(lodp_session *session, lodp_siv_key *init_key,
     lodp_siv_key *resp_key, const lodp_ecdh_public_key *pub_key)
 {
+	lodp_handshake_data *hs;
 	uint8_t shared_secret[LODP_MAC_DIGEST_LEN];
 	int ret;
+
+	assert(NULL != session->handshake);
+
+	hs = session->handshake;
 
 	if (session->is_initiator) {
 		/*
 		 * Initiator:
-		 *  * X -> session->session_ecdh_keypair.public_key
-		 *  * x -> session->session_ecdh_keypair.private_key
+		 *  * X -> hs->session_keypair.public_key
+		 *  * x -> hs->session_keypair.private_key
 		 *  * Y -> pub_key
 		 *  * B -> session->remote_public_key
 		 */
 		ret = lodp_ntor(shared_secret,
-		    session->session_secret_verifier,
-		    &session->session_ecdh_keypair.public_key,	/* X */
-		    &session->session_ecdh_keypair.private_key, /* x */
-		    pub_key,					/* Y */
-		    NULL,					/* y */
-		    &session->remote_public_key,		/* B */
-		    NULL,					/* b */
-		    session->peer_node_id,
-		    session->peer_node_id_len,
-		    sizeof(shared_secret),
-		    sizeof(session->session_secret_verifier));
+			hs->session_secret_verifier,
+			&hs->session_keypair.public_key,        /* X */
+			&hs->session_keypair.private_key,       /* x */
+			pub_key,                                /* Y */
+			NULL,                                   /* y */
+			&session->remote_public_key,            /* B */
+			NULL,                                   /* b */
+			session->responder_node_id,
+			session->responder_node_id_len,
+			sizeof(shared_secret),
+			sizeof(hs->session_secret_verifier));
 	} else {
 		/*
 		 * Responder:
 		 *  * X-> pub_key
-		 *  * Y -> session->session_ecdh_keypair.public_key
-		 *  * y -> session->session_ecdh_keypair.private_key
-		 *  * B -> ep->intro_ecdh_keypair.public_key
-		 *  * b -> ep->intro_ecdh_keypair.private_key
+		 *  * Y -> hs->session_keypair.public_key
+		 *  * y -> hs->session_keypair.private_key
+		 *  * B -> ep->identity_keypair.public_key
+		 *  * b -> ep->identity_keypair.private_key
 		 */
 		ret = lodp_ntor(shared_secret,
-		    session->session_secret_verifier,
-		    pub_key,					/* X */
-		    NULL,					/* x */
-		    &session->session_ecdh_keypair.public_key,	/* Y */
-		    &session->session_ecdh_keypair.private_key, /* y */
-		    &session->ep->intro_ecdh_keypair.public_key,/* B */
-		    &session->ep->intro_ecdh_keypair.private_key, /* b */
-		    session->ep->node_id,
-		    session->ep->node_id_len,
-		    sizeof(shared_secret),
-		    sizeof(session->session_secret_verifier));
+			hs->session_secret_verifier,
+			pub_key,                                        /* X */
+			NULL,                                           /* x */
+			&hs->session_keypair.public_key,                /* Y */
+			&hs->session_keypair.private_key,               /* y */
+			&session->ep->identity_keypair.public_key,      /* B */
+			&session->ep->identity_keypair.private_key,     /* b */
+			session->ep->node_id,
+			session->ep->node_id_len,
+			sizeof(shared_secret),
+			sizeof(hs->session_secret_verifier));
 	}
 	if (ret) {
 out_err:
-		lodp_memwipe(session->session_secret_verifier,
-		    sizeof(session->session_secret_verifier));
+		lodp_memwipe(hs->session_secret_verifier,
+		    sizeof(hs->session_secret_verifier));
 		goto out;
 	}
 
@@ -865,39 +879,6 @@ out_err:
 out:
 	lodp_memwipe(shared_secret, sizeof(shared_secret));
 	return ((LODP_ERR_OK == ret) ? ret : LODP_ERR_BAD_HANDSHAKE);
-}
-
-
-static void
-scrub_handshake_material(lodp_session *session)
-{
-	assert(NULL != session);
-
-	lodp_log_session(session, LODP_LOG_DEBUG,
-	    "_scrub_handshake_material(): Purging handshake material");
-
-	/* Wipe the Init intro key source material */
-	lodp_memwipe(&session->intro_key_src, sizeof(session->intro_key_src));
-
-	/* Wipe the cookie */
-	if (NULL != session->cookie) {
-		lodp_memwipe(session->cookie, session->cookie_len);
-		free(session->cookie);
-		session->cookie = NULL;
-	}
-
-	/* Wipe the handshake parameters */
-	lodp_memwipe(&session->session_ecdh_keypair,
-	    sizeof(session->session_ecdh_keypair));
-
-	/* Wipe the cached shared secret/validator */
-	lodp_memwipe(&session->session_secret, sizeof(session->session_secret));
-	lodp_memwipe(&session->session_secret_verifier,
-	    sizeof(session->session_secret_verifier));
-
-	/* Wipe the rekey keys, these are copied before this routine is called */
-	lodp_memwipe(&session->tx_rekey_key, sizeof(session->tx_rekey_key));
-	lodp_memwipe(&session->rx_rekey_key, sizeof(session->rx_rekey_key));
 }
 
 
@@ -1029,6 +1010,7 @@ static inline void
 session_on_rekey(lodp_session *session)
 {
 	assert(NULL != session);
+	assert(NULL != session->handshake);
 	assert(STATE_REKEY == session->state);
 
 	/* Reset the various bits of bookkeeping. */
@@ -1042,8 +1024,10 @@ session_on_rekey(lodp_session *session)
 	session->stats.gen_time = time(NULL);
 
 	/* Move the new keys over */
-	memcpy(&session->tx_key, &session->tx_rekey_key, sizeof(session->tx_key));
-	memcpy(&session->rx_key, &session->rx_rekey_key, sizeof(session->rx_key));
+	memcpy(&session->tx_key, &session->handshake->tx_rekey_key,
+	    sizeof(session->tx_key));
+	memcpy(&session->rx_key, &session->handshake->rx_rekey_key,
+	    sizeof(session->rx_key));
 
 	/* Back to the established state */
 	session->state = STATE_ESTABLISHED;
@@ -1082,7 +1066,7 @@ on_init_pkt(lodp_endpoint *ep, const lodp_pkt_init *init_pkt, const lodp_buf
 
 	/* Pull out the peer's keys */
 	ret = lodp_derive_init_introkey(&key, init_pkt->intro_key_src,
-	    sizeof(init_pkt->intro_key_src));
+		sizeof(init_pkt->intro_key_src));
 	if (ret) {
 		lodp_log_addr(ep, LODP_LOG_ERROR, addr,
 		    "_on_init_pkt(): Failed to derive peer key (%d)",
@@ -1165,7 +1149,7 @@ bad_cookie:
 
 	/* Pull out the peer's keys */
 	ret = lodp_derive_init_introkey(&key, hs_pkt->intro_key_src,
-	    sizeof(hs_pkt->intro_key_src));
+		sizeof(hs_pkt->intro_key_src));
 	if (ret) {
 		lodp_log_addr(ep, LODP_LOG_ERROR, addr,
 		    "_on_handshake_pkt(): Failed to derive peer key (%d)",
@@ -1248,16 +1232,16 @@ bad_cookie:
 		goto out_wipe;
 
 	/* Save the cookie */
-	session->cookie = calloc(1, COOKIE_LEN);
-	if (NULL == session->cookie) {
+	session->handshake->cookie = calloc(1, COOKIE_LEN);
+	if (NULL == session->handshake->cookie) {
 		lodp_log_session(session, LODP_LOG_ERROR,
 		    "_on_handshake_pkt(): OOM saving cookie");
 		ret = LODP_ERR_NOBUFS;
 		lodp_session_destroy(session);
 		goto out_wipe;
 	}
-	session->cookie_len = COOKIE_LEN;
-	memcpy(session->cookie, cookie.bytes, COOKIE_LEN);
+	session->handshake->cookie_len = COOKIE_LEN;
+	memcpy(session->handshake->cookie, cookie.bytes, COOKIE_LEN);
 
 	/* Complete our side of the modified ntor handshake */
 	ret = ntor_handshake(session, &session->rx_key, &session->tx_key,
@@ -1345,6 +1329,8 @@ on_rekey_pkt(lodp_session *session, const lodp_pkt_rekey *rk_pkt)
 	 * REKEY ACK being lost.
 	 */
 	if (STATE_REKEY == session->state) {
+		assert(NULL != session->handshake);
+
 		if (lodp_memeq(pub_key.public_key,
 		    session->remote_public_key.public_key,
 		    sizeof(session->remote_public_key.public_key))) {
@@ -1362,19 +1348,27 @@ on_rekey_pkt(lodp_session *session, const lodp_pkt_rekey *rk_pkt)
 
 		/* Retransmit the REKEY ACK from the cache */
 		goto do_xmit;
-	} else
-		session->state = STATE_REKEY;
+	}
 
-	/* Generate a new ephemeral ECDH keypair */
-	if (lodp_ecdh_gen_keypair(&session->session_ecdh_keypair, NULL, 0)) {
+	/* This shouldn't happen...  */
+	if (NULL != session->handshake)
+		lodp_handshake_free(session);
+
+	session->state = STATE_REKEY;
+
+	ret = lodp_handshake_init(session);
+	if (ret) {
+		lodp_log_session(session, LODP_LOG_ERROR,
+		    "_ok_rekey_pkt(): Failed to initialize handshake state (%d)",
+		    ret);
 		ret = LODP_ERR_CONNABORTED;
 		session->state = STATE_ERROR;
 		goto out;
 	}
 
 	/* Ntor handshake */
-	ret = ntor_handshake(session, &session->rx_rekey_key,
-		&session->tx_rekey_key, &pub_key);
+	ret = ntor_handshake(session, &session->handshake->rx_rekey_key,
+		&session->handshake->tx_rekey_key, &pub_key);
 	if (ret) {
 		/* Failure to rekey is fatal for the connection */
 		session->state = STATE_ERROR;
@@ -1427,10 +1421,11 @@ on_data_pkt(lodp_session *session, const lodp_pkt_data *pkt)
 		 * handshake data, as the peer has clearly received the
 		 * HANDSHAKE ACK.
 		 */
-		if (!session->is_initiator) {
-			lodp_bf_a2(session->ep->cookie_filter, session->cookie,
-			    session->cookie_len);
-			scrub_handshake_material(session);
+		if ((!session->is_initiator) && (NULL != session->handshake)) {
+			lodp_bf_a2(session->ep->cookie_filter,
+			    session->handshake->cookie,
+			    session->handshake->cookie_len);
+			lodp_handshake_free(session);
 		}
 	}
 
@@ -1478,6 +1473,8 @@ on_init_ack_pkt(lodp_session *session, const lodp_pkt_init_ack *pkt)
 		return (LODP_ERR_BAD_PACKET);
 	}
 
+	assert(NULL != session->handshake);
+
 	/*
 	 * Save the cookie
 	 *
@@ -1506,9 +1503,9 @@ on_init_ack_pkt(lodp_session *session, const lodp_pkt_init_ack *pkt)
 	}
 	memcpy(cookie, pkt->cookie, cookie_len);
 
-	session->cookie = cookie;
-	session->cookie_len = cookie_len;
-	session->cookie_time = time(NULL);
+	session->handshake->cookie = cookie;
+	session->handshake->cookie_len = cookie_len;
+	session->handshake->cookie_time = time(NULL);
 
 	/* Send a HANDSHAKE */
 	session->state = STATE_HANDSHAKE;
@@ -1535,6 +1532,8 @@ on_handshake_ack_pkt(lodp_session *session, const lodp_pkt_handshake_ack *pkt)
 		return (LODP_ERR_BAD_PACKET);
 	}
 
+	assert(NULL != session->handshake);
+
 	/* Validate the HANDSHAKE ACK */
 	if (PKT_HDR_HANDSHAKE_ACK_LEN != pkt->hdr.length) {
 		lodp_log_session(session, LODP_LOG_DEBUG,
@@ -1556,7 +1555,7 @@ on_handshake_ack_pkt(lodp_session *session, const lodp_pkt_handshake_ack *pkt)
 	}
 
 	/* Confirm that the correct shared secret was derived */
-	if (lodp_memeq(pkt->digest, session->session_secret_verifier,
+	if (lodp_memeq(pkt->digest, session->handshake->session_secret_verifier,
 	    sizeof(pkt->digest))) {
 		session->state = STATE_ERROR;
 		ret = LODP_ERR_BAD_HANDSHAKE;
@@ -1567,7 +1566,7 @@ on_handshake_ack_pkt(lodp_session *session, const lodp_pkt_handshake_ack *pkt)
 	session->state = STATE_ESTABLISHED;
 
 out:
-	scrub_handshake_material(session);
+	lodp_handshake_free(session);
 	session->ep->callbacks.on_connect_fn(session, ret);
 	lodp_memwipe(&pub_key, sizeof(pub_key));
 	return (ret);
@@ -1593,6 +1592,8 @@ on_rekey_ack_pkt(lodp_session *session, const lodp_pkt_rekey_ack *pkt)
 		return (LODP_ERR_BAD_PACKET);
 	}
 
+	assert(NULL != session->handshake);
+
 	/* Validate the REKEY ACK */
 	if (PKT_HDR_REKEY_ACK_LEN != pkt->hdr.length)
 		return (LODP_ERR_BAD_PACKET);
@@ -1609,15 +1610,15 @@ on_rekey_ack_pkt(lodp_session *session, const lodp_pkt_rekey_ack *pkt)
 	    sizeof(pkt->public_key));
 
 	/* Complete our side of the modified ntor handshake */
-	ret = ntor_handshake(session, &session->tx_rekey_key,
-		&session->rx_rekey_key, &pub_key);
+	ret = ntor_handshake(session, &session->handshake->tx_rekey_key,
+		&session->handshake->rx_rekey_key, &pub_key);
 	if (ret) {
 		session->state = STATE_ERROR;
 		goto out;
 	}
 
 	/* Confirm that the correct shared secret was derived */
-	if (lodp_memeq(pkt->digest, session->session_secret_verifier,
+	if (lodp_memeq(pkt->digest, session->handshake->session_secret_verifier,
 	    sizeof(pkt->digest))) {
 		session->state = STATE_ERROR;
 		ret = LODP_ERR_BAD_HANDSHAKE;
@@ -1626,7 +1627,7 @@ on_rekey_ack_pkt(lodp_session *session, const lodp_pkt_rekey_ack *pkt)
 
 	session_on_rekey(session);
 out:
-	scrub_handshake_material(session);
+	lodp_handshake_free(session);
 	session->ep->callbacks.on_rekey_fn(session, ret);
 	lodp_memwipe(&pub_key, sizeof(pub_key));
 	return (ret);

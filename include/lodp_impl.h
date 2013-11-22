@@ -54,7 +54,7 @@ struct lodp_endpoint_s {
 
 	/* Session initialization (Responder) */
 	int			has_intro_keys;
-	lodp_ecdh_keypair	intro_ecdh_keypair;
+	lodp_ecdh_keypair	identity_keypair;
 	lodp_siv_key		intro_siv_key;
 	uint8_t *		node_id;
 	size_t			node_id_len;
@@ -85,6 +85,23 @@ typedef enum {
 	STATE_ERROR             /* TCB is fucked */
 } lodp_session_state;
 
+typedef struct {
+	/* Initiator specific handshake state */
+	uint8_t *		cookie;         /* Handshake Cookie */
+	uint16_t		cookie_len;
+	time_t			cookie_time;    /* Received cookie at */
+	uint8_t			intro_key_src[LODP_SIV_SRC_LEN];
+
+	/* NTOR handshake state */
+	lodp_ecdh_keypair	session_keypair;
+	lodp_ecdh_shared_secret session_secret;
+	uint8_t			session_secret_verifier[LODP_MAC_DIGEST_LEN];
+
+	/* Rekeying */
+	lodp_siv_key		tx_rekey_key;
+	lodp_siv_key		rx_rekey_key;
+} lodp_handshake_data;
+
 struct lodp_session_s {
 	void *			ctxt; /* User opaque handle */
 
@@ -94,24 +111,14 @@ struct lodp_session_s {
 	int			is_initiator;
 	int			seen_peer_data;
 
-	/* Session initialization (Common) */
 	lodp_ecdh_public_key	remote_public_key;
-
-	/* Session initialization (Initiator) */
-	uint8_t *		cookie;
-	uint16_t		cookie_len;
-	time_t			cookie_time;
-	uint8_t			intro_key_src[LODP_SIV_SRC_LEN];
+	uint8_t *		responder_node_id;
+	size_t			responder_node_id_len;
+	lodp_handshake_data *	handshake;
 
 	/* Ephemeral Session Keys */
-	lodp_ecdh_keypair	session_ecdh_keypair;
-	lodp_ecdh_shared_secret session_secret;
-	uint8_t			session_secret_verifier[LODP_MAC_DIGEST_LEN];
 	lodp_siv_key		tx_key;
 	lodp_siv_key		rx_key;
-
-	lodp_siv_key		tx_rekey_key;
-	lodp_siv_key		rx_rekey_key;
 
 	/* Replay prevention */
 	uint32_t		tx_last_seq;
@@ -121,8 +128,6 @@ struct lodp_session_s {
 	struct sockaddr_storage peer_addr;
 	socklen_t		peer_addr_len;
 	char			peer_addr_str[LODP_ADDRSTRLEN];
-	uint8_t *		peer_node_id;
-	size_t			peer_node_id_len;
 
 	/* Connection Table */
 	uint64_t		peer_addr_hash;
@@ -185,6 +190,8 @@ int lodp_session_init(lodp_session **session, const void *ctxt,
     const uint8_t *pub_key, size_t pub_key_len, const uint8_t *node_id,
     size_t node_id_len, int is_initiator);
 void lodp_session_destroy(lodp_session *session);
+int lodp_handshake_init(lodp_session *session);
+void lodp_handshake_free(lodp_session *session);
 
 
 #endif

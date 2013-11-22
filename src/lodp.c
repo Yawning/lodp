@@ -54,6 +54,7 @@ static void free_endpoint(lodp_endpoint *ep);
 static void free_session(lodp_session *session);
 
 
+
 RB_GENERATE(lodp_ep_sessions, lodp_session_s, entry, session_cmp);
 
 
@@ -166,7 +167,7 @@ lodp_endpoint_listen(lodp_endpoint *ep, const uint8_t *priv_key,
 	memcpy(ep->node_id, node_id, node_id_len);
 
 	/* Initialize Curve25519 keys */
-	ret = lodp_ecdh_gen_keypair(&ep->intro_ecdh_keypair, priv_key,
+	ret = lodp_ecdh_gen_keypair(&ep->identity_keypair, priv_key,
 		priv_key_len);
 	if (ret) {
 		lodp_log(ep, LODP_LOG_ERROR,
@@ -177,7 +178,7 @@ lodp_endpoint_listen(lodp_endpoint *ep, const uint8_t *priv_key,
 
 	/* Initialize Introductory SIV key */
 	ret = lodp_derive_resp_introkey(&ep->intro_siv_key,
-		&ep->intro_ecdh_keypair.public_key);
+		&ep->identity_keypair.public_key);
 	if (ret) {
 		lodp_log(ep, LODP_LOG_ERROR,
 		    "listen(): Failed to derive Introductory SIV key (%d)",
@@ -450,11 +451,10 @@ lodp_session_init(lodp_session **ssession, const void *ctxt, lodp_endpoint *ep,
 	lodp_straddr((struct sockaddr *)&session->peer_addr,
 	    session->peer_addr_str, sizeof(session->peer_addr_str));
 
-	/* Generate the Ephemeral Curve25519 keypair */
-	ret = lodp_ecdh_gen_keypair(&session->session_ecdh_keypair, NULL, 0);
+	ret = lodp_handshake_init(session);
 	if (ret) {
 		lodp_log(ep, LODP_LOG_ERROR,
-		    "_session_init(): Failed to generate session key (%d)",
+		    "_session_init(): Failed to initialize handshake state (%d)",
 		    ret);
 		free_session(session);
 		return (ret);
@@ -470,19 +470,19 @@ lodp_session_init(lodp_session **ssession, const void *ctxt, lodp_endpoint *ep,
 		goto add_and_return;
 	}
 
-	/* Save the peer's node id used in the ntor handshake */
+	/* Save the Responder's node id used in the ntor handshake */
 	assert(NULL != node_id);
 	assert(0 != node_id_len);
 	assert(node_id_len <= LODP_NODE_ID_LEN_MAX);
 
-	session->peer_node_id = calloc(1, node_id_len);
-	if (NULL == session->peer_node_id) {
+	session->responder_node_id = calloc(1, node_id_len);
+	if (NULL == session->responder_node_id) {
 		lodp_log(ep, LODP_LOG_ERROR, "connect(): OOM saving node_id");
 		free_session(session);
 		return (LODP_ERR_NOBUFS);
 	}
-	session->peer_node_id_len = node_id_len;
-	memcpy(session->peer_node_id, node_id, node_id_len);
+	session->responder_node_id_len = node_id_len;
+	memcpy(session->responder_node_id, node_id, node_id_len);
 
 	session->state = STATE_INIT;
 	session->is_initiator = 1;
@@ -499,9 +499,11 @@ lodp_session_init(lodp_session **ssession, const void *ctxt, lodp_endpoint *ep,
 	}
 
 	/* Generate a temporary SIV key for the handshake */
-	lodp_rand_bytes(session->intro_key_src, sizeof(session->intro_key_src));
+	lodp_rand_bytes(session->handshake->intro_key_src,
+	    sizeof(session->handshake->intro_key_src));
 	ret = lodp_derive_init_introkey(&session->rx_key,
-		session->intro_key_src, sizeof(session->intro_key_src));
+		session->handshake->intro_key_src,
+		sizeof(session->handshake->intro_key_src));
 	if (ret) {
 		lodp_log(ep, LODP_LOG_ERROR,
 		    "connect(): Failed to derive self Introductory SIV key (%d)",
@@ -619,6 +621,8 @@ lodp_send(lodp_session *session, const void *buf, size_t len)
 int
 lodp_rekey(lodp_session *session)
 {
+	int ret;
+
 	if (NULL == session)
 		return (LODP_ERR_INVAL);
 
@@ -630,10 +634,15 @@ lodp_rekey(lodp_session *session)
 
 	/* Generate the new curve25519 keypair */
 	if (STATE_ESTABLISHED == session->state) {
-		/* If this fails, try again? */
-		if (lodp_ecdh_gen_keypair(&session->session_ecdh_keypair,
-		    NULL, 0))
-			return (LODP_ERR_AGAIN);
+		assert(NULL == session->handshake);
+
+		ret = lodp_handshake_init(session);
+		if (ret) {
+			lodp_log_session(session, LODP_LOG_ERROR,
+			    "rekey(): Failed to initialize handshake state (%d)",
+			    ret);
+			return (ret);
+		}
 
 		session->state = STATE_REKEY;
 	} else if (STATE_REKEY != session->state)
@@ -656,6 +665,58 @@ lodp_close(lodp_session *session)
 	lodp_session_destroy(session);
 
 	return (LODP_ERR_OK);
+}
+
+
+int
+lodp_handshake_init(lodp_session *session)
+{
+	int ret;
+
+	assert(NULL != session);
+	assert(NULL == session->handshake);
+
+	session->handshake = calloc(1, sizeof(*session->handshake));
+	if (NULL == session->handshake) {
+		lodp_log(session->ep, LODP_LOG_ERROR,
+		    "_handshake_init(): OOM allocating handshake state (%p)",
+		    session);
+		return (LODP_ERR_NOBUFS);
+	}
+
+	/* Generate the Ephemeral Curve25519 keypair */
+	ret = lodp_ecdh_gen_keypair(&session->handshake->session_keypair,
+		NULL, 0);
+	if (ret) {
+		lodp_log(session->ep, LODP_LOG_ERROR,
+		    "_handshake_init(): Failed to generate session key (%d)",
+		    ret);
+		lodp_handshake_free(session);
+		return (ret);
+	}
+
+	return (LODP_ERR_OK);
+}
+
+
+void
+lodp_handshake_free(lodp_session *session)
+{
+	lodp_handshake_data *hs;
+
+	assert(NULL != session);
+	assert(NULL != session->handshake);
+
+	hs = session->handshake;
+	if (NULL != hs->cookie) {
+		lodp_memwipe(hs->cookie, hs->cookie_len);
+		free(session->handshake->cookie);
+		hs->cookie = NULL;
+	}
+
+	lodp_memwipe(hs, sizeof(*hs));
+	free(hs);
+	session->handshake = NULL;
 }
 
 
@@ -722,12 +783,10 @@ free_session(lodp_session *session)
 {
 	assert(NULL != session);
 
-	if (NULL != session->peer_node_id)
-		free(session->peer_node_id);
-	if (NULL != session->cookie) {
-		lodp_memwipe(session->cookie, session->cookie_len);
-		free(session->cookie);
-	}
+	if (NULL != session->responder_node_id)
+		free(session->responder_node_id);
+	if (NULL != session->handshake)
+		lodp_handshake_free(session);
 
 	lodp_memwipe(session, sizeof(*session));
 	free(session);
