@@ -138,31 +138,21 @@ struct lodp_session_s {
 /*
  * Buffer management
  *
- * This is simplified by using a buffer pool, maintaining individual buffers
- * that contain both the plaintext and the ciphertext.  This does end up
- * limiting the MSS to a compile time constant.
- *
- * Unless explicitly disabled, the code will insert canary's after the buffers
+ * Unless explicitly disabled, the code will insert canary's around the buffers
  * to attempt to detect runtime data corruption.
  *
- * Note:
- * The 64 buffers preallocated is probably overkill due to the design of the
- * current codebase.  In theory, there should only be 2 buffers outstanding
- * since I require the user to copy the data out in each callback.  Either relax
- * this restriction or actually only allocate 2.
  */
 #define BUFPOOL_INCR	64                      /* Buffer pool base/increase */
 #define LODP_MSS	(1280 - 8 - 40)         /* IPv6 MSS - UDP header */
 
 
 typedef struct lodp_buf_s {
-	uint8_t		plaintext[LODP_MSS] __attribute__ ((aligned(__BIGGEST_ALIGNMENT__)));
 #ifndef NDEBUG
-	uint32_t	pt_canary;
+	uint32_t	pre_canary;
 #endif
-	uint8_t		ciphertext[LODP_MSS] __attribute__ ((aligned(__BIGGEST_ALIGNMENT__)));
+	uint8_t		data[LODP_MSS] __attribute__ ((aligned(__BIGGEST_ALIGNMENT__)));
 #ifndef NDEBUG
-	uint32_t	ct_canary;
+	uint32_t	post_canary;
 #endif
 	uint16_t	len;
 	SLIST_ENTRY(lodp_buf_s) entry;

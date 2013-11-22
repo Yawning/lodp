@@ -50,8 +50,8 @@ typedef struct lodp_bufpool_s {
 
 
 #ifndef NDEBUG
-#define BUFPOOL_PT_MAGIC	0xdeadbabe
-#define BUFPOOL_CT_MAGIC	0xbabedead
+#define BUFPOOL_PRE_MAGIC	0xdeadbabe
+#define BUFPOOL_POST_MAGIC	0xbabedead
 #endif
 
 #define MAX_LOG_LEN		256
@@ -101,8 +101,8 @@ lodp_buf_alloc(void)
 	buf = SLIST_FIRST(&bufpool.head);
 	if (NULL != buf) {
 #ifndef NDEBUG
-		assert(BUFPOOL_PT_MAGIC == buf->pt_canary);
-		assert(BUFPOOL_CT_MAGIC == buf->ct_canary);
+		assert(BUFPOOL_PRE_MAGIC == buf->pre_canary);
+		assert(BUFPOOL_POST_MAGIC == buf->post_canary);
 #endif
 		SLIST_REMOVE_HEAD(&bufpool.head, entry);
 		bufpool.nr_available--;
@@ -118,14 +118,14 @@ lodp_buf_free(lodp_buf *buf)
 	assert(bufpool_initialized);
 	assert(NULL != buf);
 #ifndef NDEBUG
-	assert(BUFPOOL_PT_MAGIC == buf->pt_canary);
-	assert(BUFPOOL_CT_MAGIC == buf->ct_canary);
+	assert(BUFPOOL_PRE_MAGIC == buf->pre_canary);
+	assert(BUFPOOL_POST_MAGIC == buf->post_canary);
 #endif
 
 	lodp_memwipe(buf, sizeof(*buf));
 #ifndef NDEBUG
-	buf->pt_canary = BUFPOOL_PT_MAGIC;
-	buf->ct_canary = BUFPOOL_CT_MAGIC;
+	buf->pre_canary = BUFPOOL_PRE_MAGIC;
+	buf->post_canary = BUFPOOL_POST_MAGIC;
 #endif
 	SLIST_INSERT_HEAD(&bufpool.head, buf, entry);
 	bufpool.nr_available++;
@@ -162,8 +162,8 @@ bufpool_grow(lodp_bufpool *pool)
 			return (LODP_ERR_NOBUFS);
 
 #ifndef NDEBUG
-		buf->pt_canary = BUFPOOL_PT_MAGIC;
-		buf->ct_canary = BUFPOOL_CT_MAGIC;
+		buf->pre_canary = BUFPOOL_PRE_MAGIC;
+		buf->post_canary = BUFPOOL_POST_MAGIC;
 #endif
 		SLIST_INSERT_HEAD(&pool->head, buf, entry);
 		pool->nr_allocated++;
