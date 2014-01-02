@@ -1,35 +1,41 @@
-cmake_minimum_required(VERSION 2.8)
-project(liblodp)
+cmake_minimum_required(VERSION 2.8.5)
+project(liblodpxx)
 
+# Some of the crypto uses assembler files
+enable_language(ASM)
+
+# Default to debug builds
 if (NOT CMAKE_BUILD_TYPE)
-	message(STATUS "No build type selected, defaulting to Debug")
-	set(CMAKE_BUILD_TYPE "Debug")
+  message(STATUS "No build type selected, defaulting to Debug")
+  set(CMAKE_BUILD_TYPE "Debug")
 endif()
 
-# Enable tinfoil hat mode
-add_definitions(-DTINFOIL)
+# Tweak the compiler flags
+add_definitions(-Wall -Werror -O2)
+#add_definitions(-Wall -Werror)
+#add_definitions(-Wall -Weffc++)
+set(CMAKE_CXX_FLAGS "-std=c++11 -fno-exceptions -fno-rtti")
+set(CMAKE_C_FLAGS "-std=c99")
 
-# Enable extra sanity checking
-add_definitions(-DDEBUG)
+# Need pthreads
+find_package (Threads)
 
-# Make the compiler more anal and enable support for C99.
-add_definitions(-Wall -Werror -std=c99)
-
-# External libraries that we depend on.
+# CMake does not autodetect libottery
 set(LIBOTTERY_PATH /opt/libottery)
 add_library(libottery STATIC IMPORTED)
 set_target_properties(libottery
-	PROPERTIES IMPORTED_LOCATION "${LIBOTTERY_PATH}/lib/libottery.a"
+  PROPERTIES IMPORTED_LOCATION "${LIBOTTERY_PATH}/lib/libottery.a"
 )
 include_directories("${LIBOTTERY_PATH}/include")
 
-# Use libnostd for certain BSDisms, note that this is entirely unneccecary on
-# actual BSD systems.
-set(LIBNOSTD_PATH /opt/libnostd)
-include_directories("${LIBNOSTD_PATH}/")
-include_directories("${LIBNOSTD_PATH}/bsd")
+# lodp uses protobufs
+include(FindProtobuf)
+find_package(Protobuf REQUIRED)
+include_directories(${PROTOBUF_INCLUDE_DIR})
 
-# Actual things that need to be built
+# Enable ctest support
+enable_testing()
+
+# Add subdirectories
 add_subdirectory(src)
-add_subdirectory(tests)
-
+add_subdirectory(doc)

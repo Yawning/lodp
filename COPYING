@@ -25,8 +25,11 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ==============================================================================
-src/ext/{blake2.h,blake2-impl.h,blake2s-ref.c} are distributed under this
-   license:
+ src/ext/blake2.h
+ src/ext/blake2-impl.h,
+ src/ext/blake2-kat.h
+ src/ext/blake2s-ref.c
+  are distributed under this license:
 
 Creative Commons Legal Code
 
@@ -151,18 +154,25 @@ express Statement of Purpose.
     this CC0 or use of the Work.
 
 ==============================================================================
-src/ext/{chacha.h,chacha.c,chacha_blocks_ref.c} are distributed under this
-   license:
+ src/ext/chacha.h
+ src/ext/chacha.c
+ src/ext/chacha_blocks_ref.c
+ src/ext/chacha_blocks_x86-32.S
+ src/ext/chacha_blocks_x86-64.S
+  are distributed under this license:
 
 Public Domain, or MIT
 
 ==============================================================================
-src/ext/curve25519-donna.c is distributed under this license:
+ src/ext/curve25519-donna.c
+  is distributed under this license:
 
 Public Domain by Andrew M <liquidsun@gmail.com>
 
 ==============================================================================
-src/ext/{siphash.h,siphash_impl.h,siphash.c} are distributed under this
-   license:
+ src/ext/siphash.h
+ src/ext/siphash_impl.h
+ src/ext/siphash.c
+  are distributed under this license:
 
 Public Domain

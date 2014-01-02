@@ -1,0 +1,71 @@
+//
+// Not-Quite TCP (NQTCP) Protocol Buffers
+//
+// Copyright (c) 2013, Yawning Angel <yawning at schwanenlied dot me>
+// All rights reserved.
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
+//
+//  * Redistributions of source code must retain the above copyright notice,
+//    this list of conditions and the following disclaimer.
+//
+//  * Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
+
+//
+// The contents of each NQTCP packet consist of a byte serialized Google
+// Protocol Buffers message.  This is done so that it is easy to utilize
+// existing serialization code to do packet processing and to allow easy
+// extension in the future.
+//
+// Note:
+// Following the Google Protocol Buffers documentation's note on "Required Is
+// Forever", all fields are tagged as optional despite the fact that they may be
+// required.
+//
+
+package schwanenlied.nqtcp.packet;
+
+// Don't generate any of the introspection code.
+option optimize_for = LITE_RUNTIME;
+
+message Packet {
+  // Protocol Buffers doesn't appear to support declaring constant values (See
+  // https://code.google.com/p/protobuf/issues/detail?id=60), so go with the
+  // first workaround listed in the bug.
+  enum Flags {
+    FIN = 0x01;
+    SYN = 0x02;
+    ACK = 0x04;
+    RST = 0x08;
+    // (0x10 -> Are reserved for future expansion)
+  }
+
+  // Required fields
+  optional fixed32 connection_id = 1;         // Connection ID
+  optional fixed32 flags = 2;                 // Bitfield of Flags
+  optional fixed32 receive_window = 3;        // Receive window size
+  optional fixed32 sequence_number = 4;       // Sequence number
+  optional fixed32 acknowledgment_number = 5; // Acknowledgement number
+
+  // Optional fields
+  optional bytes sack_vector = 6;             // Selective acknowledgements:w
+
+  // Tag numbers 7->14 are reserved for future expansion
+
+  optional bytes payload = 15;
+}

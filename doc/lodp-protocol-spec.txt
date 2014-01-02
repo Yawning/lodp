@@ -231,7 +231,7 @@ Yawning Angel <yawning@schwanenlied.me>
     Siv = leftmost(SivAd, EV_LEN)
     V = rightmost(SivAd, V_LEN)
     Pt = E(rightmost(t, EK_LEN), Siv, rightmost(t, X_LEN - (EV_LEN + V_LEN)))
-    SivCheck = H(leftmost(t, HL_LEN), V | Pt)
+    SivCheck = H(leftmost(t, HK_LEN), V | Pt)
     if is_equal(SivCheck, Siv)
       plaintext = Pt 
     else

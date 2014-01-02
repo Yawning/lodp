@@ -1,0 +1,122 @@
+//
+// Lightweight Obfuscated Datagram Protocol (LODP) Protocol Buffers
+//
+// Copyright (c) 2013, Yawning Angel <yawning at schwanenlied dot me>
+// All rights reserved.
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
+//
+//  * Redistributions of source code must retain the above copyright notice,
+//    this list of conditions and the following disclaimer.
+//
+//  * Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
+
+//
+// The contents of each LODP packet inside the Authenticated Encryption with
+// Associated Data envelope is a byte serialized Google Protocol Buffers
+// message.  This is done so that it is easy to utilize existing serialization
+// code to do packet processing and to allow easy extension in the future.
+//
+// The "Union Types" idiom is used to allow the actual LODP packet handler to
+// differentiate between the various packet types.
+//
+// Note:
+// At least for the initial version, all the "optional" fields are actually
+// required.  See the note under "Required Is Forever" in the Protocol Buffers
+// documentation for the rationale behind this choice.
+//
+
+package schwanenlied.lodp.packet;
+
+// Don't generate any of the introspection code.
+option optimize_for = LITE_RUNTIME;
+
+// Data (DATA)
+message Data {
+  optional fixed32 sequence_number = 1;
+  optional bytes payload = 2;
+}
+
+// Initiation Packet (INIT)
+message Init {
+  optional bytes intro_siv_key_source = 1;  // 256 bits
+}
+
+// Initiation Acknowledgement (INIT ACK)
+message InitAck {
+  optional bytes handshake_cookie = 1;      // 256 bits
+}
+
+// Handshake (HANDSHAKE)
+message Handshake {
+  optional bytes intro_siv_key_source = 1; // 256 bits
+  optional bytes initiator_public_key = 2; // 256 bits
+  optional bytes handshake_cookie = 3;     // 256 bits
+}
+
+// Handshake Acknowledgement (HANDSHAKE ACK)
+message HandshakeAck {
+  optional bytes responder_public_key = 1; // 256 bits
+  optional bytes handshake_auth = 2;       // 256 bits
+}
+
+// Rekey (REKEY)
+message Rekey {
+  optional fixed32 sequence_number = 1;
+  optional bytes initiator_public_key = 2; // 256 bits
+}
+
+// Rekey Acknowledgement (REKEY ACK)
+message RekeyAck {
+  optional fixed32 sequence_number = 1;
+  optional bytes responder_public_key = 2; // 256 bits
+  optional bytes handshake_auth = 3;       // 256 bits
+}
+
+// Shutdown (SHUTDOWN)
+message Shutdown {
+  optional fixed32 sequence_number = 1;
+}
+
+// Packet envelope
+message Envelope {
+  enum Type {
+    DATA = 0;
+    INIT = 1;
+    INIT_ACK = 2;
+    HANDSHAKE = 3;
+    HANDSHAKE_ACK = 4;
+    REKEY = 5;
+    REKEY_ACK = 6;
+    SHUTDOWN = 7;
+  }
+  optional Type packet_type = 1;
+
+  optional Data msg_data = 2;
+  optional Init msg_init = 3;
+  optional InitAck msg_init_ack = 4;
+  optional Handshake msg_handshake = 5;
+  optional HandshakeAck msg_handshake_ack = 6;
+  optional Rekey msg_rekey = 7;
+  optional RekeyAck msg_rekey_ack = 8;
+  optional Shutdown msg_shutdown = 9;
+  // Tag numbers 10->14 are reserved for future packet types
+
+  optional bytes pad = 15;
+}
+

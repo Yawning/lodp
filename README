@@ -1,153 +1,102 @@
 Lightweight Obfuscated Datagram Protocol (LODP)
 Yawning Angel <yawning at schwanenlied dot me>
 
-    "This network protocol kills facists"
+  "much key, so encrypt, such secure, wow"
 
-This is the reference implementation of LODP, a fingerprinting/active scanning
+This is the reference implementation of LODP, a fingerprinting active scanning
 resistant unreliable datagram protocol, similar to Dust and SSU.
 
 It currently has the following external dependencies:
- * CMake (Compile time only)
- * BSD tree.h/queue.h (Use libnostd if you need a copy, compile time only)
+ * Compile time only
+   * CMake
+   * Doxygen  (To generate the documentation)
  * libottery (https://github.com/nmathewson/libottery)
+ * Google Protocol Buffers (https://code.google.com/p/protobuf/)
 
-It currently incorporates code from the following 3rd parties, all "Public
-Domain" of various flavors:
- * Floodyberry's curve25519-donna.c 
-   (https://github.com/floodyberry/curve25519-donna)
- * Floodyberry's SipHash-2-4 implementation
-   (https://github.com/floodyberry/siphash)
- * Floodyberry's (X)ChaCha implementation
-   (https://github.com/floodyberry/chacha-opt)
- * blake2 reference implementation
-   (https://github.com/BLAKE2/BLAKE2)
+It currently incorporates code from the following 3rd parties:
+ * Various flavors of "Public Domain"/CC-0
+   * Floodyberry's curve25519-donna.c
+     (https://github.com/floodyberry/curve25519-donna)
+   * Floodyberry's SipHash-2-4 implementation
+     (https://github.com/floodyberry/siphash)
+   * Floodyberry's (X)ChaCha implementation
+     (https://github.com/floodyberry/chacha-opt)
+   * BLAKE2 reference implementation
+     (https://github.com/BLAKE2/BLAKE2)
+ * 3 Clause BSD license
+   * Google Protocol Buffers
+     (https://code.google.com/p/protobuf/)
+   * Google C++ Testing Framework (Unit tests only)
+     (https://code.google.com/p/googletest/)
 
 Please see the COPYING file for information on licensing.
 
-For more information on the LODP protocol see:
- * docs/lodp-protocol-spec.txt
-
-Building:
- * Edit ./CMakeFiles.txt
- * mkdir build; cd build; cmake ..; make
- * If more detailed instructions are required, the codebase in it's current
-   state probably is not for you.
+The test suite gets built as lodpxx_test.  It's half heartedly integreated into
+CMake's test functionality in that "make test" will run the suite but to see
+individual test results running the binary manually is required.
 
 Implementation notes:
  * Build related:
-   * Your compiler must support C99.
-   * Your compiler must support GCC attributes.
+   * Your C compiler must support C99.
+   * Your C++ compiler must support a reasonable amount of C++11 (GCC 4.7.2 or
+     later).
+   * No testing was done on Windows.  Eventually the project will support mingw
+     but it is unlikely that it will ever support Visual Studio.
+   * By default x86-64 crypto is being built.  The resulting library will not
+     work on 32 bit systems unless this is changed.
  * Library related:
-   * This library is NOT thread OR fork safe.
-   * The code does a fair amount of runtime sanity checking via assert.  If you
-     are feeling brave you can -DNDEBUG to make it go faster.
-   * No testing was done on Windows, but the code should work with minor
-     header file changes on sufficiently recent versions of Windows.  Note that
-     Windows XP neither is sufficiently recent nor does it have inet_pton.
- * Protocol notes (Optional behavior and etc):
-   * The Maximum Segment Size is a compile time constant since the buffers used
-     on packet send/receive are preallocated in a pool.  The size is selected on
-     the somewhat conservative side, based around IPv4 encapsulated IPv6 frames.
-     This could be increased, but it will break interoperability as the protocol
-     does not have a mechanism for negotiating MSS.
-   * The maximum number of supported sessions per source IP/port to a given
-     endpoint is 1.  This is not a LODP limitation but an implementation one.
-     Attempting to handshake while you already have a session established to a
-     given destination will result in the handshake failing.
-   * Amplification attacks are mitigated by limiting the amount of padding added
-     to INIT ACK packets.  There is still potential for amplification (dependng
-     on how much padding the application code decides to add), but the worst
-     case behavior is that the attacker gets an additional 224 bytes.
-   * Replay protection is done differently depending on the packet type.
-     * INIT packets (2x 18232 entry bloom filters, 0.001 false postive rate, 64
-       KiB/endpoint)
-     * HANDSHAKE cookie reuse detection (2x 1139 etnry bloom filters, 0.001
-       false positive rate, 4 KiB/endpoint).  Note that cookie reuse is
-       impossible beyond the cookie's validity window (at most 60 sec after the
-       cookie is generated), so the relatively small filter should be
-       sufficient.
-     * DATA packets (Sequence Number/Sliding window)
-     * REKEY/REKEY ACK packets (Sequence Number/Sliding window)
-
-       INIT ACK/HANDSHAKE and HANDSHAKE ACK packets can be replayed, but as
-       they are silently dropped when the connection has completed handshaking,
-       the replayed packets will have 0 impact.
-
-   * Algorithmic complexity attacks are defended against as thus:
-     * The Session Table is a AVL tree built off the SipHash of the remote
-       address + port. (This may change to a tree for IPv4 and one for
-       IPv6).
-     * Rekeying is rate limited to once every 5 seconds at most per connection.
-       In the event that you are running LODP with connections that sustain >
-       2^31 packets within 5 seconds, this restricton can be removed from the
-       code.
-   * The receiver side reserves 1024 packets of the sequence number space to be
-     able to send REKEY ACKs.  Properly implemented clients will REKEY 2 billion
-     packets or so before the reserve window is hit.
-   * No attempt is made to minimise losses due to reordering around a
-     REKEY/REKEY ACK pair.  This will only be a problem for the initiator if a
-     lot of data reordered around the REKEY ACK.
-   * Node IDs are limited to 64 bytes.
-   * The size of cookies that the the Initiator will process is limited to 256
-     bytes.  The cookies that this implementation generates are 32 bytes.
-
-Note about -DTINFOIL:
- * Enabling Tinfoil Hat mode will add extra paranoia checking at the expense of
-   memory and CPU.
-   * When generating Curve25519 keys, the output from the PRNG is passed through
-     BLAKE2s instead of being used directly.
-   * General packet replay detection with a 0.01 false positive rate (+~2
-     MiB/endpoint).  The odds of this happening under normal use are
-     astromically low, so enabling this will just lead to suprious
-     retransmissions whenever a false positive occurs.  It is also worth noting
-     that the bloomfilter can only maintain 875k to 1.7m packets.
+   * The library is neither thread nor fork safe.
+   * The library is written under the assumption that Exceptions and RTTI are
+     disabled.  The behavior expected when an exception is thrown is that the
+     program will abort() (g++'s -fno-exceptions will use this behavior).
+   * The library was designed under the assumption that a event driven
+     non-blocking I/O library is used to provide the actual networking bits.
+     Utterly horrific things will happen if the socket calls used are blocking.
+   * C++ is primarily used as "a better C", so do not expect the code to be very
+     C++ like internally.
+   * Components under src/schwanenlied that aren't part of the lodp namespace
+     are written with the idea that they will be useful for other projects.
+     Yay.
 
 TODO:
- * Nice to have tasks:
-   * Add more nice to have statistics.
-     * Connection count
-     * Various errors
-     * Handshake counts
-     * Add a generic dropped packet counter
-   * Move more constants to runtime tunables.
-     * Bloom filter sizes
-     * Cookie rotation period
-     * Rekey minimum interval
-   * It would be cool if the pre_encrypt and transmit hook had the packet type
-     as an argument.
- * Clean up/refactor the code to be easier to audit and more obviously correct.
-   * Add more useful log messages (actually use more than the INFO level...)
-   * LODP_ERR_BAD_PACKET is returned when I should be returning something like
-     LODP_ERR_INVALID_STATE.
- * Performance related tasks:
-   * Include the optimized curve25519-donna implementations.
-   * Include the optimized blake2 implementations. (XXX: Is it worth saying
-     "screw 32 bit system performance" and using truncated blake2b?)
-   * Include the optimized XChaCha/20 implementations.
-   * If lodp_buf_free was exposed to the user code, I could probably make this
-     go even faster.
-
-Eventually someone should do:
- * Write unit tests.
- * Make the library support Windows out of the box (Should mostly work).
-
-Might do:
- * The build system kind of sucks since you need to edit CMakeLists.txt.
- * Support more than 1 connection from a given source IP/port.  However
-   an arbitrary number would be bad because each added connection is another MAC
-   validation per inbound packet.
- * Think about allowing this to be thread safe.  That said, with the optimized
-   crypto on good hardware a single core should be more than enough for a while.
- * Go even faster tweaks:
-   * Red paint job on the packets.
-   * Allow the initiator side to transmit data while REKEYing.
- * Modify the third party stuff in src/ext so they don't pollute the namespace.
- * Get rid of the dependency on inet_ntop() for Windows XP.
-
-Things that the protocol should have:
- * It would be nice if I could figure out a way to add RSTs without being
-   vulnerable to spoofing (That said, if the person can spoof RSTs, we've lost
-   anyway since they know it's a LODP endpoint).
- * (MAYBE) The HANDSHAKE/HANDSHAKE ACK pair contain the MSS?
- * (MAYBE) Hard limit to the INIT ACK cookie length. (>= 32 bytes).
- * (MAYBE) Hard limit to the node ID length. (>= 20 bytes).
+ * Update the spec for the brave new Protocol Buffers world.
+ * Use git submodules for the ext directory.
+ * C wrappers for liblodpxx would be nice.
+ * Clean up the build system.
+ * Write more unit tests.
+ * The code hits up the heap more than I'd like.  Not sure if trying to reduce
+   this further really buys anything, and with the current design it's possible
+   to ensure that sensitive data is allocated from a mlocked() region in the
+   future if so desired.
+ * (MAYBE) Make the library thread safe.  Single core performance on any modern
+   system should be quite fast, and most event driven network libraries assume a
+   single thread per event loop anyway.  As long as Endpoints (and it's
+   associated Sessions) don't cross thread boundaries, the library will work as
+   is.
+ * (MAYBE) Change crypto::Random to an abstract class so that people can plug
+   in a different concrete implementation of a CSPRNG (Eg: OpenSSL).  Not much
+   to be gained from this since libottery is easier to manage as a dependency
+   than OpenSSL is.
+ * (UNLIKELY) Reconsider the stance on exceptions, though the only exception
+   the code will ever generate is std::bad_alloc, which is irrecoverably fatal
+   anyway.  The irony of the fact that I'm using C++11 features and refusing to
+   use exceptions is not lost on me.  This wouldn't be hard since the code is
+   exception safe to begin with, but I don't see what the potential gain is.
+ * (UNLIKELY) Change inet_ntop() to getaddrinfo() to allow this to work on
+   Windows XP.  Windows XP will be EOL by the time this actually gets deployed.
+ * (UNLIKELY) Reconsider my stance on abort()ing when the user screws up
+   massively.  The magnitude of the error that the application code needs to
+   make to actually trigger any of the assertions is rather large (Eg: Yanking
+   out an endpoint from underneath a bunch of sessions), so I view this behavior
+   as a debugging aid more than anything else.
+ * (UNLIKELY) Reconsider the use of C++11 features.  If functionality is broken
+   with a sufficiently recent GCC release, I'll change the code (Note: Debian
+   squeeze ships with gcc 4.4.5 which was released on October 1, 2010.  That is
+   not anything even vaguely resembling "sufficiently recent").
+    * GCC prior to 4.6.1 may puke on std::unique_ptr in associative containers.
+      (GCC bug #44436).
+    * GCC prior to 4.7.2 does not fully support std::chrono::steady_clock (And
+      certain versions may need --enable-libstdcxx-time).
+ * (NEVER) Support Visual Studio as a build environment.
+    * God knows what their C++11 support is like (I know that steady_clock is
+      broken at a minimum).
