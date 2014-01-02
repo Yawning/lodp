@@ -75,7 +75,7 @@ lodp_bf_init(size_t m_ln2, double p)
 	if (NULL == bf)
 		return (NULL);
 
-	m = lodp_bf_calc(0, n, p);
+	/* m = lodp_bf_calc(0, n, p); */
 
 	m = 1 << m_ln2;
 	k = (int)((m * ln_2 / n) + 0.5); /*  k = m/n * ln(2) */
