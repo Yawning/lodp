@@ -18,7 +18,7 @@ set(CMAKE_CXX_FLAGS "-std=c++11 -fno-exceptions -fno-rtti")
 set(CMAKE_C_FLAGS "-std=c99")
 
 # Need pthreads
-find_package (Threads)
+find_package(Threads)
 
 # CMake does not autodetect libottery
 set(LIBOTTERY_PATH /opt/libottery)
