@@ -63,7 +63,7 @@ message Packet {
   optional fixed32 acknowledgment_number = 5; // Acknowledgement number
 
   // Optional fields
-  optional bytes sack_vector = 6;             // Selective acknowledgements:w
+  optional bytes sack_vector = 6;             // Selective acknowledgements
 
   // Tag numbers 7->14 are reserved for future expansion
 
