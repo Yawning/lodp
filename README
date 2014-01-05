@@ -9,8 +9,9 @@ resistant unreliable datagram protocol, similar to Dust and SSU.
 It currently has the following external dependencies:
  * Compile time only
    * CMake
-   * Doxygen  (To generate the documentation)
+   * Doxygen (To generate the documentation)
  * libottery (https://github.com/nmathewson/libottery)
+ * libuv (https://github.com/joyent/libuv)
  * Google Protocol Buffers (https://code.google.com/p/protobuf/)
 
 It currently incorporates code from the following 3rd parties:
@@ -66,7 +67,7 @@ TODO:
  * Write more unit tests.
  * The code hits up the heap more than I'd like.  Not sure if trying to reduce
    this further really buys anything, and with the current design it's possible
-   to ensure that sensitive data is allocated from a mlocked() region in the
+   to ensure that sensitive data is allocated from a mlock()ed region in the
    future if so desired.
  * (MAYBE) Make the library thread safe.  Single core performance on any modern
    system should be quite fast, and most event driven network libraries assume a
@@ -84,6 +85,7 @@ TODO:
    exception safe to begin with, but I don't see what the potential gain is.
  * (UNLIKELY) Change inet_ntop() to getaddrinfo() to allow this to work on
    Windows XP.  Windows XP will be EOL by the time this actually gets deployed.
+   I could just use uv_ipv[4,6]_name() now that libuv is a dependency.
  * (UNLIKELY) Reconsider my stance on abort()ing when the user screws up
    massively.  The magnitude of the error that the application code needs to
    make to actually trigger any of the assertions is rather large (Eg: Yanking

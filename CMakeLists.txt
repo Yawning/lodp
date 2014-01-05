@@ -28,6 +28,14 @@ set_target_properties(libottery
 )
 include_directories("${LIBOTTERY_PATH}/include")
 
+# CMake does not autodetect libuv
+set(LIBUV_PATH /opt/libuv-0.11.17)
+add_library(libuv STATIC IMPORTED)
+set_target_properties(libuv
+  PROPERTIES IMPORTED_LOCATION "${LIBUV_PATH}/lib/libuv.a"
+)
+include_directories("${LIBUV_PATH}/include")
+
 # lodp uses protobufs
 include(FindProtobuf)
 find_package(Protobuf REQUIRED)

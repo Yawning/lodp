@@ -38,6 +38,7 @@ set(lodpxx_SRCS
   schwanenlied/lodp/lodp_session.cc
   schwanenlied/bloom_filter.cc
   schwanenlied/ip_address.cc
+  schwanenlied/timer.cc
   ${LODP_PROTO_SRC}
   ${NQTCP_PROTO_SRC}
 )
@@ -59,6 +60,7 @@ set(lodpxx_test_SRCS
   schwanenlied/lodp/lodp_test.cc
   schwanenlied/bloom_filter_test.cc
   schwanenlied/ip_address_test.cc
+  schwanenlied/timer_test.cc
 )
 
 add_executable(lodpxx_test ${lodpxx_test_SRCS})
@@ -67,6 +69,7 @@ target_link_libraries(lodpxx_test
   ${PROTOBUF_LITE_LIBRARY}
   ${CMAKE_THREAD_LIBS_INIT}
   libottery
+  libuv
   gtest
   gtest_main
 )
