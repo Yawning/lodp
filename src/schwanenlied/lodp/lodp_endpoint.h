@@ -31,8 +31,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef SCHWANENLIED_LODP_ENDPOINT_H__
-#define SCHWANENLIED_LODP_ENDPOINT_H__
+#ifndef SCHWANENLIED_LODP_LODP_ENDPOINT_H__
+#define SCHWANENLIED_LODP_LODP_ENDPOINT_H__
 
 #include <array>
 #include <cerrno>
@@ -438,7 +438,8 @@ class LodpEndpoint {
    * @returns (Error codes from errors.h) - The packet processing triggered an
    *          error.
    */
-  int on_packet(const uint8_t* buf, const size_t buf_len,
+  int on_packet(const uint8_t* buf,
+                const size_t buf_len,
                 const IPAddress& addr);
 
   /** @{ */
@@ -683,4 +684,4 @@ crypto::SecureBuffer derive_initiator_siv_key(const ::std::string &key_source);
 } // namespace lodp
 } // namespace schwanenlied
 
-#endif // SCHWANENLIED_LODP_ENDPOINT_H__
+#endif // SCHWANENLIED_LODP_LODP_ENDPOINT_H__

@@ -31,8 +31,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef SCHWANENLIED_LODP_SESSION_H__
-#define SCHWANENLIED_LODP_SESSION_H__
+#ifndef SCHWANENLIED_LODP_LODP_SESSION_H__
+#define SCHWANENLIED_LODP_LODP_SESSION_H__
 
 #include <chrono>
 #include <memory>
@@ -512,4 +512,4 @@ class LodpSession {
 } // namespace lodp
 } // namespace schwanenlied
 
-#endif // SCHWANENLIED_LODP_SESSION_H__
+#endif // SCHWANENLIED_LODP_LODP_SESSION_H__
