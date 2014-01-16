@@ -1,5 +1,5 @@
 /**
- * @file    errors.h
+ * @file    lodp_errors.h
  * @author  Yawning Angel (yawning at schwanenlied dot me)
  * @brief   LODP error codes
  */
@@ -41,15 +41,12 @@ namespace lodp {
  * The base offset of all LODP specific errors
  *
  * The LODP code shifts all of it's own errors into a unused portion of the int
- * return code space since it allows the user to propagate return values back to
- * the calling code from the callbacks.  Additionally, where it makes sense,
- * LODP returns -errno.
+ * return code space since it allows the application to propagate return values
+ * back to the calling code from the callbacks.
  */
-const int kErrorOffset = 0x0010000;
+const int kErrorOffset = 0x0020000;
 
 /** @{ */
-/** Success */
-const int kErrorOk = 0;
 /** Session is not the initiator */
 const int kErrorNotInitiator = -(kErrorOffset | 1);
 /** Session is not the responder */

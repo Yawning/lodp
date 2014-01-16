@@ -131,22 +131,22 @@ int LodpSession::handshake() {
     break;
   case State::kESTABLISHED: // FALLSTHROUGH
   case State::kREKEY:
-    return -EISCONN;
+    return kErrorIsConn;
   default:
-    return -EBADFD;
+    return kErrorBadFD;
   }
 }
 
 int LodpSession::send(const void* buf,
                   const size_t len) {
   if (buf == nullptr && len > 0)
-    return -EINVAL;
+    return kErrorInval;
   if (len > mtu())
-    return -EMSGSIZE;
+    return kErrorMsgSize;
   if (state_ == State::kREKEY)
     return kErrorMustRekey;
   if (state_ != State::kESTABLISHED)
-    return -ENOTCONN;
+    return kErrorNotConn;
 
   // Generate the DATA packet and transmit it
   ::std::unique_ptr<packet::Envelope> data(new packet::Envelope());  // TODO/Performance: Buffer pool
@@ -156,7 +156,7 @@ int LodpSession::send(const void* buf,
   data_msg->set_payload(buf, len);
 
   if (!tx_seq_ok())
-    return -ECONNABORTED;
+    return kErrorConnAborted;
 
   stats_.tx_goodput_bytes_ += len;
   stats_.generation_tx_++;
@@ -173,7 +173,7 @@ int LodpSession::rekey() {
     return kErrorNotInitiator;
 
   if (state_ != State::kESTABLISHED && state_ != State::kREKEY)
-    return -ENOTCONN;
+    return kErrorNotConn;
 
   state_ = State::kREKEY;
 
@@ -232,7 +232,7 @@ void LodpSession::pad_packet(packet::Envelope& pkt) {
 
 int LodpSession::siv_encrypt_and_xmit(packet::Envelope& pkt) {
   if (state_ == State::kINVALID || state_ == State::kERROR)
-    return -EBADFD;
+    return kErrorBadFD;
 
   pad_packet(pkt);
 
@@ -480,7 +480,7 @@ int LodpSession::send_rekey_packet() {
                                       session_key_->length());
 
   if (!tx_seq_ok())
-    return -ECONNABORTED;
+    return kErrorConnAborted;
 
   return siv_encrypt_and_xmit(*rekey);
 }
@@ -500,7 +500,7 @@ int LodpSession::send_rekey_ack_packet() {
   rekey_ack_msg->set_handshake_auth(auth_->data(), auth_->length());
 
   if (!tx_seq_ok())
-    return -ECONNABORTED;
+    return kErrorConnAborted;
 
   return siv_encrypt_and_xmit(*rekey_ack);
 }
@@ -672,8 +672,8 @@ int LodpSession::on_handshake_ack_packet(const packet::Envelope& pkt) {
     // Connection failed, mark the Session as invalid
     scrub_handshake_state();
     state_ = State::kERROR;
-    endpoint_.callbacks_.on_connect(*this, -ECONNABORTED);
-    return -ECONNABORTED;
+    endpoint_.callbacks_.on_connect(*this, kErrorConnAborted);
+    return kErrorConnAborted;
   }
 
   // Derive the ephemeral SIV keys
@@ -832,8 +832,8 @@ int LodpSession::on_rekey_ack_packet(const packet::Envelope& pkt) {
     // Rekey failed, mark the Session as invalid
     scrub_handshake_state();
     state_ = State::kERROR;
-    endpoint_.callbacks_.on_rekey(*this, -ECONNABORTED);
-    return -ECONNABORTED;
+    endpoint_.callbacks_.on_rekey(*this, kErrorConnAborted);
+    return kErrorConnAborted;
   }
 
   // Derive the ephemeral SIV keys

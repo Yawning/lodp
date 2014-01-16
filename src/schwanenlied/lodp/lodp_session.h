@@ -125,8 +125,8 @@ class LodpSession {
    * they call this routine.  Internally it does no rate limiting and can end up
    * spamming the remote peer with packets.
    *
-   * @returns -EBADFD            - The LodpSession is in a invalid state
-   * @returns -EISCONN           - The LodpSession is already connected
+   * @returns kErrorBadFD        - The LodpSession is in a invalid state
+   * @returns kErrorIsConn       - The LodpSession is already connected
    * @returns kErrorNotInitiator - The LodpSession is not the initiator (client)
    *                               side of the connection.
    * @returns (User specified value) - The value returned from the callback
@@ -139,11 +139,11 @@ class LodpSession {
    * @param[in] buf  The buffer to send
    * @param[in] len  The lenght of the buffer
    *
-   * @returns -EINVAL - The parameters are invalid
-   * @returns -EMSGSIZE - The size of the buffer is bigger than the mtu().
-   * @returns -ENOTCONN - The connection is not fully handshaked
-   * @returns -ECONNABORTED - No remaining sequence number space to send *ANY*
-   *                          data (Must close() the LodpSession)
+   * @returns kErrorInval   - The parameters are invalid
+   * @returns kErrorMsgSize - The size of the buffer is bigger than the mtu().
+   * @returns kErrorNotConn - The connection is not fully handshaked
+   * @returns kErrorConnAborted - No remaining sequence number space to send
+   *                              *ANY* data (Must close() the LodpSession)
    * @returns kErrorMustRekey - The initiator must rekey() before it can send
    *                            data.
    * @returns (User specified value) - The value returned from the callback
@@ -153,9 +153,9 @@ class LodpSession {
   /**
    * Attempt to rekey the ephemeral session keys (Initiator only)
    *
-   * @returns -ENOTCONN - The connection is not fully handshaked
-   * @returns -ECONNABORTED - No remaining sequence number space to send *ANY*
-   *                          data (Must close() the LodpSession)
+   * @returns kErrorNotConn     - The connection is not fully handshaked
+   * @returns kErrorConnAborted - No remaining sequence number space to send
+   *                              *ANY* data (Must close() the LodpSession)
    * @returns kErrorNotInitiator - The LodpSession is not the initiator (client)
    *                               side of the connection.
    */
@@ -395,7 +395,7 @@ class LodpSession {
    * @returns kErrorProtocol - The LodpSession is not in a state that allows
    *                           HANDSHAKE ACK packets
    * @returns kErrorBadPacketFormat - The HANDSHAKE ACK packet is malformed
-   * @returns -ECONNABORTED         - The crypto::NtorHandshake failed
+   * @returns kErrorConnAborted     - The crypto::NtorHandshake failed
    */
   int on_handshake_ack_packet(const packet::Envelope& pkt);
 
@@ -420,7 +420,7 @@ class LodpSession {
    * @returns kErrorProtocol - The LodpSession is not in a state that allows
    *                           REKEY ACK packets
    * @returns kErrorBadPacketFormat - The REKEY ACK packet is malformed
-   * @returns -ECONNABORTED         - The crypto::NtorHandshake failed
+   * @returns kErrorConnAborted     - The crypto::NtorHandshake failed
    */
   int on_rekey_ack_packet(const packet::Envelope& pkt);
 

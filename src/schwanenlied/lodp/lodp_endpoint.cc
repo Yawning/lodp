@@ -102,11 +102,11 @@ int LodpEndpoint::connect(void* ctxt,
                           const IPAddress& addr,
                           LodpSession*& session) {
   if (node_id == nullptr)
-    return -EINVAL;
+    return kErrorInval;
   if (node_id_len == 0)
-    return -EINVAL;
+    return kErrorInval;
   if (session_table_.count(addr) != 0)
-    return -EISCONN;
+    return kErrorIsConn;
 
   LodpSession* tcb = new LodpSession(*this, ctxt, public_key, node_id,
                                      node_id_len, addr);
@@ -120,9 +120,9 @@ int LodpEndpoint::on_packet(const uint8_t* buf,
                             const size_t buf_len,
                             const IPAddress& addr) {
   if (buf == nullptr)
-    return -EINVAL;
+    return kErrorInval;
   if (buf_len == 0)
-    return -EINVAL;
+    return kErrorInval;
 
   stats_.rx_bytes_ += buf_len;
 
@@ -443,7 +443,7 @@ int LodpEndpoint::on_handshake_packet(const packet::Envelope& pkt,
 
   // Callback to the user to inform them that a peer wishes to talk to us
   if (!callbacks_.should_accept(*this, addr.sockaddr(), addr.length()))
-    return -ECONNREFUSED;
+    return kErrorConnRefused;
 
   // Allocate the TCB
   LodpSession* new_tcb = new LodpSession(*this, session_public, peer_public,

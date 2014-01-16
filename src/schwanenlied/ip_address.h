@@ -153,7 +153,7 @@ namespace std {
  * safely use ::schwanenlied::IPAddress as keys in the STL's unordered
  * associative containers.
  */
-template <>
+template<>
 struct hash<::schwanenlied::IPAddress> {
  public:
   size_t operator()(const schwanenlied::IPAddress& addr) const {
