@@ -92,6 +92,10 @@ const int kErrorAFNoSupport = -(kErrorOffset | 2);
 const int kErrorBadFD = -(kErrorOffset | 3);
 /** Message too long */
 const int kErrorMsgSize = -(kErrorOffset | 4);
+/** No remaining descriptors */
+const int kErrorNFile = -(kErrorOffset | 5);
+/** Resource temporarily unavailable */
+const int kErrorAgain = -(kErrorOffset | 6);
 
 /** Is connected */
 const int kErrorIsConn = -(kErrorOffset | 10);

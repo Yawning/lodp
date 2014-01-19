@@ -42,6 +42,9 @@ static const uint8_t kIntroSalt[] = {
  '-', 'B', 'L', 'A', 'K', 'E', '2', 's'
 };
 
+const int LodpEndpoint::kCookieRotateInterval;
+const int LodpEndpoint::kCookieGraceInterval;
+
 LodpEndpoint::LodpEndpoint(const crypto::Random& rng,
                            LodpCallbacks& callbacks,
                            void* ctxt,
