@@ -33,11 +33,7 @@
 
 #include <cstdlib>
 #include <mutex>
-
-// libottery doesn't do this in the header, though it should
-extern "C" {
 #include <ottery.h>
-}
 
 #include "schwanenlied/crypto/random.h"
 
