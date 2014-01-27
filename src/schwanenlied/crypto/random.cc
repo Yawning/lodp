@@ -32,33 +32,31 @@
  */
 
 #include <cstdlib>
-#include <mutex>
-#include <ottery.h>
 
 #include "schwanenlied/crypto/random.h"
 
 namespace schwanenlied {
 namespace crypto {
 
-static ::std::once_flag init_rng;
-
 Random::Random() {
-  ::std::call_once(init_rng, []() {
-    int ret = ::ottery_init(nullptr);
-    SL_ASSERT(ret == 0);
-  });
+  int ret = ::ottery_st_init(&state_, NULL);
+  SL_ASSERT(ret == 0);
 }
 
-void Random::get_bytes(void* buf, const size_t len) const {
-  ::ottery_rand_bytes(buf, len);
+Random::~Random() {
+  ::ottery_st_wipe(&state_);
 }
 
-uint32_t Random::get_uint32() const {
-  return ::ottery_rand_uint32();
+void Random::get_bytes(void* buf, const size_t len) {
+  ::ottery_st_rand_bytes(&state_, buf, len);
 }
 
-uint32_t Random::get_uint32_range(uint32_t max) const {
-  return ::ottery_rand_range(max);
+uint32_t Random::get_uint32() {
+  return ::ottery_st_rand_uint32(&state_);
+}
+
+uint32_t Random::get_uint32_range(uint32_t max) {
+  return ::ottery_st_rand_range(&state_, max);
 }
 
 } // namespace crypto

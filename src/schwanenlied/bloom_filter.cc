@@ -43,7 +43,7 @@ namespace schwanenlied {
 static const double ln_2 = 0.69314718055994529;     // ln(2)
 static const double ln_2_sq = 0.48045301391820139;  // ln(2) ^ 2
 
-BloomFilter::BloomFilter(const crypto::Random& rng,
+BloomFilter::BloomFilter(crypto::Random& rng,
                          const size_t m_ln2,
                          const double p) :
     hash_(rng),

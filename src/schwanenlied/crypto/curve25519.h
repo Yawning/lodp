@@ -84,7 +84,7 @@ class PrivateKey {
    *
    * @param[in] rng   The Random instance to use to generate the key
    */
-  PrivateKey(const Random& rng);
+  PrivateKey(Random& rng);
 
   /** @{ */
   /** Return the raw key */

@@ -74,7 +74,7 @@ class SIVBlake2sXChaCha {
    *
    * @param[in] rng   The Random instance to use when generating nonces
    */
-  SIVBlake2sXChaCha(const Random& rng);
+  SIVBlake2sXChaCha(Random& rng);
 
   /**
    * Construct a SIVBlake2sXChaCha instance given a key
@@ -86,7 +86,7 @@ class SIVBlake2sXChaCha {
    * @param[in] key     A pointer to the key to associate with this instance
    * @param[in] key_len The length of the key to use
    */
-  SIVBlake2sXChaCha(const Random& rng,
+  SIVBlake2sXChaCha(Random& rng,
                     const uint8_t* key,
                     size_t key_len);
 
@@ -184,7 +184,7 @@ class SIVBlake2sXChaCha {
   SIVBlake2sXChaCha(const SIVBlake2sXChaCha&) = delete;
   void operator=(const SIVBlake2sXChaCha&) = delete;
 
-  const Random& rng_; /**< The Random instance used when generating nonces */
+  Random& rng_;       /**< The Random instance used when generating nonces */
   bool has_key_;      /**< Is a key currently set for this instance? */
   Blake2s mac_;       /**< The Blake2s object used to generate SIVs */
   XChaCha stream_;    /**< The XChaCha object used to encrypt/decrypt */

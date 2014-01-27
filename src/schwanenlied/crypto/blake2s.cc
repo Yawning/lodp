@@ -44,7 +44,7 @@ Blake2s::Blake2s(const uint8_t* key,
   key_.assign(key, key_len);
 }
 
-Blake2s::Blake2s(const Random& rng) :
+Blake2s::Blake2s(Random& rng) :
     stream_state_(State::kINVALID),
     has_key_(true),
     key_(kKeyLength, 0) {

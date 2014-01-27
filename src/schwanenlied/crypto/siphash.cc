@@ -45,7 +45,7 @@ SipHash::SipHash(const uint8_t* key,
   key_.assign(key, key_len);
 }
 
-SipHash::SipHash(const Random& rng) :
+SipHash::SipHash(Random& rng) :
     key_(kKeyLength, 0) {
   rng.get_bytes(&key_[0], key_.size());
 }

@@ -34,6 +34,8 @@
 #ifndef SCHWANENLIED_CRYPTO_RANDOM_H__
 #define SCHWANENLIED_CRYPTO_RANDOM_H__
 
+#include <ottery_st.h>
+
 #include "schwanenlied/common.h"
 
 namespace schwanenlied {
@@ -61,11 +63,8 @@ class Random {
 
   /**
    * Destroy the PRNG instance.
-   *
-   * @note To allow for RNG instances on the stack, libottery's built in
-   * teardown is used instead of explicitly tearing it down here.
    */
-  ~Random() = default;
+  ~Random();
 
   /** @{ */
   /**
@@ -74,14 +73,14 @@ class Random {
    * @param[out] buf The buffer to fill
    * @param[in]  len The number of random bytes to generate
    */
-  void get_bytes(void* buf, const size_t len) const;
+  void get_bytes(void* buf, const size_t len);
 
   /**
    * Generate a random 32 bit integer
    *
    * @return A random number between 0 and UINT_MAX inclusive
    */
-  uint32_t get_uint32() const;
+  uint32_t get_uint32();
 
   /**
    * Generate a random 32 bit integer with an upper limit
@@ -89,12 +88,14 @@ class Random {
    * @param[in] max The upper limit
    * @return A random number between 0 and max
    */
-  uint32_t get_uint32_range(uint32_t max) const;
+  uint32_t get_uint32_range(uint32_t max);
   /** @} */
 
  private:
   Random(const Random&) = delete;
   void operator=(const Random&) = delete;
+
+  struct ottery_state state_;
 };
 
 } // namespace crypto

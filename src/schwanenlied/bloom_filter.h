@@ -86,7 +86,7 @@ class BloomFilter {
    * @param[in] m_ln2 The size of an active buffers in bits as a power of 2
    * @param[in] p     The desired false positive rate
    */
-  BloomFilter(const crypto::Random& rng,
+  BloomFilter(crypto::Random& rng,
               const size_t m_ln2,
               const double p);
 

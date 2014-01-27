@@ -85,7 +85,8 @@ class Blake2s {
    *
    * @param[in] rng     The Random instance to use to generate the key
    */
-  Blake2s(const Random& rng);
+  Blake2s(Random& rng);
+
   ~Blake2s();
 
   /** @{ */

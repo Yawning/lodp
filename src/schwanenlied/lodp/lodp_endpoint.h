@@ -265,7 +265,7 @@ class LodpEndpoint {
    * @param[in] ctxt          The LodpEndpoint user context handle
    * @param[in] safe_logging  Sanitize IP addresses when logging
    */
-  LodpEndpoint(const crypto::Random& rng,
+  LodpEndpoint(crypto::Random& rng,
                LodpCallbacks& callbacks,
                void *ctxt,
                const bool safe_logging);
@@ -287,7 +287,7 @@ class LodpEndpoint {
    * @param[in] node_id       The ID of the endpoint (for crypto::NtorHandshake)
    * @param[in] node_id_len   The length of the node_id
    */
-  LodpEndpoint(const crypto::Random& rng,
+  LodpEndpoint(crypto::Random& rng,
                LodpCallbacks& callbacks,
                void *ctxt,
                const bool safe_logging,
@@ -615,7 +615,7 @@ class LodpEndpoint {
   // Generic crypto
   /** @{ */
   /** The crypto::Random instance used to generate SIVs */
-  const crypto::Random& rng_;
+  crypto::Random& rng_;
   /** The crypto::SipHash instance used for IPAddress */
   const crypto::SipHash hash_;
   /** The crypto::NtorHandshake instance used to complete handshakes */

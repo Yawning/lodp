@@ -51,7 +51,7 @@ PrivateKey::PrivateKey(const uint8_t* key, const size_t key_len,
   }
 }
 
-PrivateKey::PrivateKey(const Random& rng) :
+PrivateKey::PrivateKey(Random& rng) :
     key_(kKeyLength, 0) {
   key_.resize(kKeyLength, 0);
   rng.get_bytes(&key_[0], key_.size());

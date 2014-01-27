@@ -36,7 +36,7 @@
 namespace schwanenlied {
 namespace crypto {
 
-SIVBlake2sXChaCha::SIVBlake2sXChaCha(const Random& rng) :
+SIVBlake2sXChaCha::SIVBlake2sXChaCha(Random& rng) :
     rng_(rng),
     has_key_(false),
     mac_(),
@@ -44,7 +44,7 @@ SIVBlake2sXChaCha::SIVBlake2sXChaCha(const Random& rng) :
   // Nothing to do
 }
 
-SIVBlake2sXChaCha::SIVBlake2sXChaCha(const Random& rng,
+SIVBlake2sXChaCha::SIVBlake2sXChaCha(Random& rng,
                                      const uint8_t* key,
                                      const size_t key_len) :
     rng_(rng),

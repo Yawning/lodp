@@ -71,7 +71,7 @@ class SipHash {
    *
    * @param[in] rng   The Random instance to use to generate the key
    */
-  SipHash(const Random& rng);
+  SipHash(Random& rng);
 
   /** @{ */
   /**
