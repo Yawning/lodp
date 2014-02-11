@@ -55,7 +55,7 @@ TEST_F(CryptoUtilsTest, memequalsIsEqual) {
   uint8_t buf[1024];
 
   ::std::memset(buf, 0, sizeof(buf));
-  EXPECT_EQ(0, ::std::memcmp(buf, cmp, sizeof(buf)));
+  ASSERT_EQ(0, memequals(buf, cmp, sizeof(buf)));
 }
 
 TEST_F(CryptoUtilsTest, memequalsNotEqual) {
@@ -63,7 +63,7 @@ TEST_F(CryptoUtilsTest, memequalsNotEqual) {
   uint8_t buf[1024];
 
   ::std::memset(buf, 0xff, sizeof(buf));
-  ASSERT_NE(0, ::std::memcmp(buf, cmp, sizeof(buf)));
+  ASSERT_NE(0, memequals(buf, cmp, sizeof(buf)));
 }
 
 } // namespace crypto
